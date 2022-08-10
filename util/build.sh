@@ -6,6 +6,7 @@
 
 g_stor=""
 g_list=0
+g_depend=0
 g_target=""
 g_release=0
 g_build_rocksdb=0
@@ -75,7 +76,11 @@ _EOC_
 }
 
 get_options() {
+
     local args=`getopt -o ldorh --long stor:,list,dep:,only:,os:,release:,build_rocksdb: -n "$0" -- "$@"`
+
+
+
     eval set -- "${args}"
     while true
     do
@@ -87,6 +92,10 @@ get_options() {
             -l|--list)
                 g_list=1
                 shift 1
+                ;;
+            -d|--dep)
+                g_depend=$2
+                shift 2
                 ;;
             -o|--only)
                 g_target=$2
@@ -153,6 +162,7 @@ get_target() {
 }
 
 build_target() {
+<<<<<<< HEAD
     if [ "$g_stor" == "bs" ]; then
         git submodule update --init -- nbd
         if [ $? -ne 0 ]
@@ -160,6 +170,13 @@ build_target() {
             echo "submodule init failed"
             exit
         fi
+
+    git submodule update --init -- nbd
+    if [ $? -ne 0 ]
+    then
+        echo "submodule init failed"
+        exit
+
     fi
     local targets
     declare -A result
@@ -201,6 +218,7 @@ build_target() {
 
 
 build_requirements() {
+
     if [ "$g_stor" == "fs" ]; then
         kernel_version=`uname -r | awk -F . '{print $1 * 1000 + $2}'`
         if [ $kernel_version -gt 5001 ]; then
@@ -209,6 +227,8 @@ build_requirements() {
         g_rocksdb_root="${PWD}/thirdparties/rocksdb"
         (cd ${g_rocksdb_root} && make build from_source=${g_build_rocksdb} && make install prefix=${g_rocksdb_root})
     fi
+
+
     g_aws_sdk_root="thirdparties/aws"
     (cd ${g_aws_sdk_root} && make)
     g_etcdclient_root="thirdparties/etcdclient"
@@ -226,16 +246,18 @@ main() {
 
     if [ "$g_list" -eq 1 ]; then
         list_target
-    elif [ "$g_target" == "" ]; then
+    elif [[ "$g_target" == "" && "$g_depend" -ne 1 ]]; then
         usage
         exit 1
     else
         if [ "$g_depend" -eq 1 ]; then
             build_requirements
         fi
+
         if [ -n "$g_target" ]; then
             build_target
         fi
+
     fi
 }
 
