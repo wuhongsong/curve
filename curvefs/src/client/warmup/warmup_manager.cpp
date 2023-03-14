@@ -34,7 +34,7 @@
 
 #include "curvefs/src/client/inode_wrapper.h"
 #include "curvefs/src/client/kvclient/kvclient_manager.h"
-#include "curvefs/src/client/s3/client_s3_cache_manager.h"
+#include "curvefs/src/client/cache/fuse_client_cache_manager.h"
 #include "curvefs/src/common/s3util.h"
 #include "src/common/concurrent/concurrent.h"
 #include "src/common/string_util.h"
@@ -457,6 +457,7 @@ void WarmupManagerS3Impl::TravelChunk(fuse_ino_t ino,
 void WarmupManagerS3Impl::WarmUpAllObjs(
     fuse_ino_t key,
     const std::list<std::pair<std::string, uint64_t>> &prefetchObjs) {
+/*
     std::atomic<uint64_t> pendingReq(0);
     curve::common::CountDownEvent cond(1);
     // callback function
@@ -501,6 +502,7 @@ void WarmupManagerS3Impl::WarmUpAllObjs(
 
             LOG(WARNING) << "Get Object failed, key: " << context->key
                          << ", offset: " << context->offset;
+
             s3Adaptor_->GetS3Client()->DownloadAsync(context);
         };
 
@@ -529,6 +531,7 @@ void WarmupManagerS3Impl::WarmUpAllObjs(
         if (pendingReq.load())
             cond.Wait();
     }
+*/
 }
 
 bool WarmupManagerS3Impl::ProgressDone(fuse_ino_t key) {
@@ -674,6 +677,7 @@ void WarmupManagerS3Impl::AddFetchS3objectsTask(fuse_ino_t key,
 
 void WarmupManagerS3Impl::PutObjectToCache(const std::string &filename,
                                            const char *data, uint64_t len) {
+                                        /*
     int ret =
         s3Adaptor_->GetDiskCacheManager()->WriteReadDirect(filename, data, len);
     if (ret < 0) {
@@ -685,6 +689,7 @@ void WarmupManagerS3Impl::PutObjectToCache(const std::string &filename,
         kvClientManager_->Set(
             std::make_shared<SetKVCacheTask>(filename, data, len));
     }
+    */
 }
 
 }  // namespace warmup
