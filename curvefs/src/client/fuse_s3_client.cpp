@@ -47,18 +47,18 @@ using curvefs::mds::topology::MemcacheClusterInfo;
 using curvefs::mds::topology::MemcacheServerInfo;
 
 CURVEFS_ERROR FuseS3Client::Init(const FuseClientOption &option) {
-    FuseClientOption opt(option);
-
-    CURVEFS_ERROR ret = FuseClient::Init(opt);
+    LOG(INFO) << "fuse init start.";
+    auto opt(option);
+    auto ret = FuseClient::Init(opt);
     if (ret != CURVEFS_ERROR::OK) {
+        LOG(INFO) << "fuse init failed, " << ret;
         return ret;
     }
-
     // init kvcache
     if (FLAGS_supportKVcache && !InitKVCache(option.kvClientManagerOpt)) {
+        LOG(INFO) << "init kv cache failed.";
         return CURVEFS_ERROR::INTERNAL;
     }
-
     // set fs S3Option
     const auto& s3Info = fsInfo_->detail().s3info();
     ::curve::common::S3InfoOption fsS3Option;
@@ -71,8 +71,10 @@ CURVEFS_ERROR FuseS3Client::Init(const FuseClientOption &option) {
         dynamic_cast<S3ClientAdaptorImpl *>(s3Adaptor_.get()),
         opt.s3Opt.s3ClientAdaptorOpt.readCacheMaxByte,
         opt.s3Opt.s3ClientAdaptorOpt.writeCacheMaxByte, kvClientManager_);
+
     if (opt.s3Opt.s3ClientAdaptorOpt.diskCacheOpt.diskCacheType !=
         DiskCacheType::Disable) {
+        LOG(INFO) << "has disk cache.";
         auto s3DiskCacheClient = std::make_shared<S3ClientImpl>();
         s3DiskCacheClient->Init(opt.s3Opt.s3AdaptrOpt);
         auto wrapper = std::make_shared<PosixWrapper>();
@@ -82,17 +84,16 @@ CURVEFS_ERROR FuseS3Client::Init(const FuseClientOption &option) {
             wrapper, diskCacheWrite, diskCacheRead);
         auto diskCacheManagerImpl = std::make_shared<DiskCacheManagerImpl>(
             diskCacheManager, s3DiskCacheClient);
-        ret = s3Adaptor_->Init(opt.s3Opt.s3ClientAdaptorOpt, s3Client,
-                               inodeManager_, mdsClient_, fsCacheManager,
-                               diskCacheManagerImpl, kvClientManager_, true);
+
+        ret = s3Adaptor_->Init(opt, inodeManager_, mdsClient_, fsCacheManager,
+                               diskCacheManagerImpl, kvClientManager_, true, fsInfo_);
     } else {
-        ret = s3Adaptor_->Init(opt.s3Opt.s3ClientAdaptorOpt, s3Client,
-                               inodeManager_, mdsClient_, fsCacheManager,
-                               nullptr, kvClientManager_, true);
+        ret = s3Adaptor_->Init(opt, inodeManager_, mdsClient_, fsCacheManager,
+                               nullptr, kvClientManager_, true, fsInfo_);
     }
+    LOG(INFO) << "fuse init success.";
     return ret;
 }
-
 
 bool FuseS3Client::InitKVCache(const KVClientManagerOpt &opt) {
      // get kvcache cluster
@@ -134,10 +135,15 @@ void FuseS3Client::UnInit() {
 
 CURVEFS_ERROR FuseS3Client::FuseOpInit(void *userdata,
                                        struct fuse_conn_info *conn) {
-    CURVEFS_ERROR ret = FuseClient::FuseOpInit(userdata, conn);
-    if (init_) {
-        s3Adaptor_->SetFsId(fsInfo_->fsid());
-        s3Adaptor_->InitMetrics(fsInfo_->fsname());
+    auto ret = FuseClient::FuseOpInit(userdata, conn);
+    if (ret != CURVEFS_ERROR::OK) {
+        LOG(ERROR) << "fuse op init failed.";
+        return ret;
+    }
+    ret = s3Adaptor_->FuseOpInit(userdata, conn);
+    if (ret != CURVEFS_ERROR::OK) {
+        LOG(ERROR) << "fuse op init failed.";
+        return ret;
     }
     return ret;
 }

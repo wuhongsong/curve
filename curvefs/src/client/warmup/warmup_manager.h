@@ -277,7 +277,8 @@ class WarmupManagerS3Impl : public WarmupManager {
         std::shared_ptr<InodeCacheManager> inodeManager,
         std::shared_ptr<DentryCacheManager> dentryManager,
         std::shared_ptr<FsInfo> fsInfo, FuseOpReadFunctionType readFunc,
-        std::shared_ptr<S3ClientAdaptor> s3Adaptor,
+// whs need to do
+        std::shared_ptr<StorageAdaptor> s3Adaptor,
         std::shared_ptr<KVClientManager> kvClientManager)
         : WarmupManager(std::move(metaClient), std::move(inodeManager),
                         std::move(dentryManager), std::move(fsInfo),
@@ -418,7 +419,7 @@ class WarmupManagerS3Impl : public WarmupManager {
     mutable RWLock warmupInodesDequeMutex_;
 
     // s3 adaptor
-    std::shared_ptr<S3ClientAdaptor> s3Adaptor_;
+    std::shared_ptr<StorageAdaptor> s3Adaptor_;
 
     // TODO(chengyi01): limit thread nums
     std::unordered_map<fuse_ino_t, std::unique_ptr<ThreadPool>>

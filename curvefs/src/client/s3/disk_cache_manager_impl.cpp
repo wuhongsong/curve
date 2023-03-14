@@ -57,6 +57,7 @@ int DiskCacheManagerImpl::Init(const S3ClientAdaptorOption option) {
 
 void DiskCacheManagerImpl::Enqueue(
     std::shared_ptr<PutObjectAsyncContext> context, bool isReadCacheOnly) {
+           VLOG(0) << "whs FlushTaskExecute start 04.2";
     if ( isReadCacheOnly ) {
         auto task = [this, context]() {
             this->WriteReadDirectClosure(context);

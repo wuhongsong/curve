@@ -49,7 +49,10 @@ class WarmupManagerS3Impl;
 class FuseS3Client : public FuseClient {
  public:
     FuseS3Client()
-        : FuseClient(), s3Adaptor_(std::make_shared<S3ClientAdaptorImpl>()) {
+        : FuseClient(),
+          s3Adaptor_(std::make_shared<S3ClientAdaptorImpl>()),
+          kvClientManager_(nullptr)
+         {
         auto readFunc = [this](fuse_req_t req, fuse_ino_t ino, size_t size,
                                off_t off, struct fuse_file_info *fi,
                                char *buffer, size_t *rSize) {
@@ -64,11 +67,12 @@ class FuseS3Client : public FuseClient {
                  const std::shared_ptr<MetaServerClient> &metaClient,
                  const std::shared_ptr<InodeCacheManager> &inodeManager,
                  const std::shared_ptr<DentryCacheManager> &dentryManager,
-                 const std::shared_ptr<S3ClientAdaptor> &s3Adaptor,
+                 const std::shared_ptr<StorageAdaptor> &s3Adaptor,
                  const std::shared_ptr<warmup::WarmupManager> &warmupManager)
         : FuseClient(mdsClient, metaClient, inodeManager, dentryManager,
                      warmupManager),
-          s3Adaptor_(s3Adaptor) {}
+          s3Adaptor_(s3Adaptor),
+          kvClientManager_(nullptr) {}
 
     CURVEFS_ERROR Init(const FuseClientOption &option) override;
 
@@ -117,7 +121,7 @@ class FuseS3Client : public FuseClient {
 
  private:
     // s3 adaptor
-    std::shared_ptr<S3ClientAdaptor> s3Adaptor_;
+    std::shared_ptr<StorageAdaptor> s3Adaptor_;
     std::shared_ptr<KVClientManager> kvClientManager_;
 };
 

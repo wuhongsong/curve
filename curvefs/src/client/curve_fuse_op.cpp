@@ -164,7 +164,6 @@ int InitFuseClient(const char *confPath, const char* fsName,
     } else if (fsInfo->fstype() == FSType::TYPE_VOLUME) {
        fsTypeMds = "volume";
     }
-
     if (fsTypeMds != fsTypeStr) {
         LOG(ERROR) << "The parameter fstype is inconsistent with mds!";
         return -1;

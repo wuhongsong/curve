@@ -180,7 +180,8 @@ void MDSBaseClient::AllocateVolumeBlockGroup(
     request.set_fsid(fsId);
     request.set_count(count);
     request.set_owner(owner);
-
+     LOG(INFO) << "whs allocat : "
+                      << request.DebugString();
     SpaceService_Stub stub(channel);
     stub.AllocateBlockGroup(cntl, &request, response, nullptr);
 }

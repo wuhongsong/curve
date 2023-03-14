@@ -39,6 +39,7 @@
 #include "curvefs/src/client/fuse_common.h"
 #include "curvefs/src/client/client_operator.h"
 #include "curvefs/src/client/inode_wrapper.h"
+#include "curvefs/src/client/kvclient/memcache_client.h"
 #include "curvefs/src/client/warmup/warmup_manager.h"
 #include "curvefs/src/client/xattr_manager.h"
 #include "curvefs/src/common/define.h"
@@ -49,6 +50,20 @@
 
 #define PORT_LIMIT 65535
 
+namespace curvefs {
+namespace client {
+namespace common {
+DECLARE_bool(enableCto);
+
+// whs need to do --  kv cache may move to s3?
+DECLARE_bool(supportKVcache);
+}  // namespace common
+}  // namespace client
+}  // namespace curvefs
+
+using curvefs::mds::topology::MemcacheClusterInfo;
+using curvefs::mds::topology::MemcacheServerInfo;
+using curvefs::client::common::FLAGS_supportKVcache;
 using ::curvefs::common::S3Info;
 using ::curvefs::common::Volume;
 using ::curvefs::mds::topology::PartitionTxId;
@@ -65,15 +80,6 @@ using ::curvefs::client::common::FileHandle;
         }                                                                      \
     } while (0)
 
-
-namespace curvefs {
-namespace client {
-namespace common {
-DECLARE_bool(enableCto);
-}  // namespace common
-}  // namespace client
-}  // namespace curvefs
-
 namespace curvefs {
 namespace client {
 
@@ -87,7 +93,7 @@ CURVEFS_ERROR FuseClient::Init(const FuseClientOption &option) {
     option_ = option;
 
     mdsBase_ = new MDSBaseClient();
-    FSStatusCode ret = mdsClient_->Init(option.mdsOpt, mdsBase_);
+    auto ret = mdsClient_->Init(option.mdsOpt, mdsBase_);
     if (ret != FSStatusCode::OK) {
         return CURVEFS_ERROR::INTERNAL;
     }
@@ -117,14 +123,14 @@ CURVEFS_ERROR FuseClient::Init(const FuseClientOption &option) {
     curve::client::ClientDummyServerInfo::GetInstance().SetPort(listenPort);
     curve::client::ClientDummyServerInfo::GetInstance().SetIP(localIp);
 
-    MetaStatusCode ret2 =
+    auto ret2 =
         metaClient_->Init(option.excutorOpt, option.excutorInternalOpt,
                           metaCache, channelManager);
     if (ret2 != MetaStatusCode::OK) {
         return CURVEFS_ERROR::INTERNAL;
     }
 
-    CURVEFS_ERROR ret3 =
+    auto ret3 =
         inodeManager_->Init(option.iCacheLruSize, option.enableICacheMetrics,
                             option.flushPeriodSec, option.refreshDataOption,
                             option.lruTimeOutSec);
@@ -143,6 +149,9 @@ CURVEFS_ERROR FuseClient::Init(const FuseClientOption &option) {
         warmupManager_->SetFsInfo(fsInfo_);
     }
 
+ LOG(ERROR) << "whs FuseClient client7 !";
+
+
     return ret3;
 }
 
@@ -153,6 +162,7 @@ void FuseClient::UnInit() {
 
     delete mdsBase_;
     mdsBase_ = nullptr;
+   // s3Adaptor_->Stop();
 }
 
 CURVEFS_ERROR FuseClient::Run() {
@@ -275,7 +285,7 @@ void InodeAttr2ParamAttr(const InodeAttr &inodeAttr, struct stat *attr) {
     attr->st_ctim.tv_sec = inodeAttr.ctime();
     attr->st_ctim.tv_nsec = inodeAttr.ctime_ns();
     attr->st_blksize = kOptimalIOBlockSize;
-
+// whs need to do？
     switch (inodeAttr.type()) {
         case metaserver::TYPE_S3:
             attr->st_blocks = (inodeAttr.length() + 511) / 512;
@@ -1342,6 +1352,16 @@ CURVEFS_ERROR FuseClient::FuseOpSymlink(fuse_req_t req, const char *link,
     inodeWrapper->GetInodeAttr(&attr);
     GetDentryParamFromInodeAttr(option_, attr, e);
     return ret;
+}
+
+// whs need to do - edit type
+CURVEFS_ERROR FuseClient::FuseOpLink(fuse_req_t req, fuse_ino_t ino,
+                                     fuse_ino_t newparent, const char *newname,
+                                     fuse_entry_param *e) {
+    VLOG(1) << "FuseOpLink, ino: " << ino << ", newparent: " << newparent
+            << ", newname: " << newname;
+    return FuseClient::FuseOpLink(
+        req, ino, newparent, newname, FsFileType::TYPE_S3, e);
 }
 
 CURVEFS_ERROR FuseClient::FuseOpLink(fuse_req_t req, fuse_ino_t ino,
