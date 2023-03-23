@@ -34,7 +34,7 @@
 
 #include "curvefs/src/client/inode_wrapper.h"
 #include "curvefs/src/client/kvclient/kvclient_manager.h"
-#include "curvefs/src/client/s3/client_s3_cache_manager.h"
+#include "curvefs/src/client/cache/fuse_client_cache_manager.h"
 #include "curvefs/src/common/s3util.h"
 #include "src/common/concurrent/concurrent.h"
 #include "src/common/string_util.h"

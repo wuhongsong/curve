@@ -42,8 +42,8 @@
 #include "curvefs/src/client/inode_cache_manager.h"
 #include "curvefs/src/client/rpcclient/mds_client.h"
 #include "curvefs/src/client/s3/client_s3.h"
-#include "curvefs/src/client/s3/client_s3_cache_manager.h"
-#include "curvefs/src/client/s3/disk_cache_manager_impl.h"
+#include "curvefs/src/client/cache/fuse_client_cache_manager.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_manager_impl.h"
 #include "src/common/wait_interval.h"
 
 namespace curvefs {
@@ -56,6 +56,34 @@ using curve::common::S3Adapter;
 using curvefs::client::common::S3ClientAdaptorOption;
 using curvefs::client::metric::S3Metric;
 
+struct S3ReadRequest {
+    uint64_t chunkId;
+    uint64_t offset;  // file offset
+    uint64_t len;
+    uint64_t objectOffset;  // s3 object's begin in the block
+    uint64_t readOffset;    // read buf offset
+    uint64_t fsId;
+    uint64_t inodeId;
+    uint64_t compaction;
+
+    std::string DebugString() const {
+        std::ostringstream os;
+        os << "S3ReadRequest ( chunkId = " << chunkId << ", offset = " << offset
+           << ", len = " << len << ", objectOffset = " << objectOffset
+           << ", readOffset = " << readOffset << ", fsId = " << fsId
+           << ", inodeId = " << inodeId << ", compaction = " << compaction
+           << " )";
+        return os.str();
+    }
+};
+
+inline std::string
+S3ReadRequestVecDebugString(const std::vector<S3ReadRequest> &reqs) {
+    std::ostringstream os;
+    for_each(reqs.begin(), reqs.end(),
+             [&](const S3ReadRequest &req) { os << req.DebugString() << " "; });
+    return os.str();
+}
 
 // client use s3 internal interface
 class S3ClientAdaptorImpl : public StorageAdaptor {
@@ -77,7 +105,6 @@ class S3ClientAdaptorImpl : public StorageAdaptor {
          std::shared_ptr<FsCacheManager> fsCacheManager,
          std::shared_ptr<DiskCacheManagerImpl> diskCacheManagerImpl,
          std::shared_ptr<KVClientManager> kvClientManager,
-         bool startBackGround,
          std::shared_ptr<FsInfo> fsInfo) override;
 
     int Stop() override;
@@ -113,6 +140,8 @@ class S3ClientAdaptorImpl : public StorageAdaptor {
     const std::vector<std::shared_ptr<PutObjectAsyncContext>> &s3Tasks,
     const std::vector<std::shared_ptr<SetKVCacheTask>> &kvCacheTasks);
 
+   void PrefetchS3Objs(uint64_t inodeId,
+    const std::vector<std::pair<std::string, uint64_t>> &prefetchObjs);
    void HandleReadRequest(
     const ReadRequest &request, const S3ChunkInfo &s3ChunkInfo,
     std::vector<ReadRequest> *addReadRequests,
@@ -126,10 +155,12 @@ class S3ClientAdaptorImpl : public StorageAdaptor {
     uint64_t fsId,
     uint64_t inodeId);
 
-   int GenerateKVReuqest(
-    const std::shared_ptr<InodeWrapper> &inodeWrapper,
-    const std::vector<ReadRequest> &readRequest, char *dataBuf,
-    std::vector<S3ReadRequest> *kvRequest);
+
+    // miss read from memory read/write cache, need read from
+    // kv(localdisk/remote cache/s3)
+    int GenerateKVReuqest(const std::shared_ptr<InodeWrapper> &inodeWrapper,
+                          const std::vector<ReadRequest> &readRequest,
+                          char *dataBuf, std::vector<S3ReadRequest> *kvRequest);
    int HandleReadS3NotExist(int ret, uint32_t retry,
     const std::shared_ptr<InodeWrapper> &inodeWrapper);
    bool ReadKVRequestFromS3(const std::string &name,
@@ -146,13 +177,73 @@ class S3ClientAdaptorImpl : public StorageAdaptor {
      uint64_t *chunkPos, uint64_t *chunkSize);
    void GetBlockLoc(uint64_t offset, uint64_t *chunkIndex,uint64_t *chunkPos,
      uint64_t *blockIndex,uint64_t *blockPos);
+    uint32_t GetPrefetchBlocks() {
+        return prefetchBlocks_;
+    }
 
+    using AsyncDownloadTask = std::function<void()>;
+    static int ExecAsyncDownloadTask(void* meta, bthread::TaskIterator<AsyncDownloadTask>& iter);  // NOLINT
+
+public:
+  void PushAsyncTask(const AsyncDownloadTask& task) {
+        static thread_local unsigned int seed = time(nullptr);
+
+        int idx = rand_r(&seed) % downloadTaskQueues_.size();
+        int rc = bthread::execution_queue_execute(
+                   downloadTaskQueues_[idx], task);
+
+        if (CURVE_UNLIKELY(rc != 0)) {
+            task();
+        }
+    }
  public:
     std::shared_ptr<S3Metric> s3Metric_;
 
+ private:
+  class AsyncPrefetchCallback {
+    public:
+      AsyncPrefetchCallback(uint64_t inode, S3ClientAdaptorImpl *s3Client)
+          : inode_(inode), s3Client_(s3Client) {}
+
+      void operator()(const S3Adapter *,
+                      const std::shared_ptr<GetObjectAsyncContext> &context) {
+          std::unique_ptr<char[]> guard(context->buf);
+
+          if (context->retCode != 0) {
+              LOG(WARNING) << "prefetch failed, key: " << context->key;
+              return;
+          }
+
+          int ret = s3Client_->GetDiskCacheManager()->WriteReadDirect(
+              context->key, context->buf, context->actualLen);
+          if (ret < 0) {
+              LOG_EVERY_SECOND(INFO) <<
+                "prefetch failed, write read directly failed, key: " << context->key;
+          }
+          {
+            curve::common::LockGuard lg(s3Client_->downloadMtx_);
+            s3Client_->downloadingObj_.erase(context->key);
+          }
+          VLOG(9) << "prefetch end, objectname is: " << context->key
+                  << ", len is: " << context->len
+                  << ", actual len is: " <<  context->actualLen;
+      }
+
+    private:
+      const uint64_t inode_;
+      S3ClientAdaptorImpl *s3Client_;
+ };
+protected:
+   curve::common::Mutex downloadMtx_;
+   std::set<std::string> downloadingObj_;
 
  private:
+    std::vector<bthread::ExecutionQueueId<AsyncDownloadTask>>
+      downloadTaskQueues_;
+    uint32_t prefetchBlocks_;
+    uint32_t prefetchExecQueueNum_;
     std::shared_ptr<S3Client> client_;
+
   //  std::shared_ptr<UnderStorage> s3Storage_;
 };
 

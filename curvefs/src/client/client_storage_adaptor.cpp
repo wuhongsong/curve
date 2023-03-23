@@ -41,20 +41,13 @@ StorageAdaptor::Init(const FuseClientOption &fuseOption,
     std::shared_ptr<FsCacheManager> fsCacheManager,
     std::shared_ptr<DiskCacheManagerImpl> diskCacheManagerImpl,
     std::shared_ptr<KVClientManager> kvClientManager,
-    bool startBackGround,
     std::shared_ptr<FsInfo> fsInfo) {
-
-
-    // startBackGround 这个参数之前是默认参数
 
     const S3ClientAdaptorOption option = fuseOption.s3Opt.s3ClientAdaptorOpt;
     VLOG(1) << "whsnew001 StorageAdaptor client0 !";
-    startBackGround = true;
-    VLOG(1) << "whs StorageAdaptor client01 !";
     pendingReq_ = 0;
     blockSize_ = option.blockSize;
     chunkSize_ = option.chunkSize;
-
     // whs need to do
     // 对于volume作为后端，当前没有指定blocksize还有chunksize
     //
@@ -71,8 +64,6 @@ StorageAdaptor::Init(const FuseClientOption &fuseOption,
 
     LOG(ERROR) << "whs StorageAdaptor client03!";
     fuseMaxSize_ = option.fuseMaxSize;
-    prefetchBlocks_ = option.prefetchBlocks;
-    prefetchExecQueueNum_ = option.prefetchExecQueueNum;
     diskCacheType_ = option.diskCacheOpt.diskCacheType;
     memCacheNearfullRatio_ = option.nearfullRatio;
     throttleBaseSleepUs_ = option.baseSleepUs;
@@ -94,28 +85,14 @@ StorageAdaptor::Init(const FuseClientOption &fuseOption,
             LOG(ERROR) << "Init disk cache failed";
             return CURVEFS_ERROR::INTERNAL;
         }
-        /*
-        // init rpc send exec-queue
-        downloadTaskQueues_.resize(prefetchExecQueueNum_);
-        for (auto &q : downloadTaskQueues_) {
-            int rc = bthread::execution_queue_start(
-                &q, nullptr, &S3ClientAdaptorImpl::ExecAsyncDownloadTask, this);
-            if (rc != 0) {
-                LOG(ERROR) << "Init AsyncRpcQueues failed";
-                return CURVEFS_ERROR::INTERNAL;
-            }
-        }
-        */
     }
-    if (startBackGround) {
-        toStop_.store(false, std::memory_order_release);
-        bgFlushThread_ = Thread(&StorageAdaptor::BackGroundFlush, this);
-    }
+
+    // start background flush thread
+    toStop_.store(false, std::memory_order_release);
+    bgFlushThread_ = Thread(&StorageAdaptor::BackGroundFlush, this);
 
     LOG(INFO) << "StorageAdaptor Init. block size:" << blockSize_
               << ", chunk size: " << chunkSize_
-              << ", prefetchBlocks: " << prefetchBlocks_
-              << ", prefetchExecQueueNum: " << prefetchExecQueueNum_
               << ", intervalSec: " << option.intervalSec
               << ", flushIntervalSec: " << option.flushIntervalSec
               << ", writeCacheMaxByte: " << option.writeCacheMaxByte
@@ -146,12 +123,6 @@ int StorageAdaptor::Stop() {
         bgFlushThread_.join();
     }
     if (HasDiskCache()) {
-/* whs need to do
-        for (auto &q : downloadTaskQueues_) {
-            bthread::execution_queue_stop(q);
-            bthread::execution_queue_join(q);
-        }
-*/
         diskCacheManagerImpl_->UmountDiskCache();
     }
     taskPool_.Stop();

@@ -32,7 +32,7 @@
 #include "src/common/interruptible_sleeper.h"
 #include "src/common/lru_cache.h"
 #include "curvefs/src/common/wrap_posix.h"
-#include "curvefs/src/client/s3/disk_cache_base.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_base.h"
 
 namespace curvefs {
 namespace client {

@@ -41,13 +41,12 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::Init(const FuseClientOption &option,
          std::shared_ptr<FsCacheManager> fsCacheManager,
          std::shared_ptr<DiskCacheManagerImpl> diskCacheManagerImpl,
          std::shared_ptr<KVClientManager> kvClientManager,
-         bool startBackGround,
          std::shared_ptr<FsInfo> fsInfo) {
 
     LOG(ERROR) << "whs volume adaptor fuse init client0 !";
     volOpts_ = option.volumeOpt;
     auto ret = StorageAdaptor::Init(option, inodeManager,
-      mdsClient, fsCacheManager, diskCacheManagerImpl, kvClientManager, true, fsInfo);
+      mdsClient, fsCacheManager, diskCacheManagerImpl, kvClientManager, fsInfo);
     if (ret != CURVEFS_ERROR::OK) {
         return ret;
     }
@@ -112,6 +111,15 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::FuseOpInit(void *userdata,
     return CURVEFS_ERROR::OK;
 }
 
+int VolumeClientAdaptorImpl::Stop() {
+    StorageAdaptor::Stop();
+    storage_->Shutdown();
+    spaceManager_->Shutdown();
+    blockDeviceClient_->UnInit();
+    return 0;
+}
+
+
 CURVEFS_ERROR VolumeClientAdaptorImpl::FlushDataCache(const UperFlushRequest& req,
   uint64_t* writeOffset) {
 
@@ -139,44 +147,6 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::FlushDataCache(const UperFlushRequest& re
     return CURVEFS_ERROR::OK;
 }
 
-/*
-
-
-    // generate kv request
-    std::vector<S3ReadRequest> kvRequest;
-    GenerateKVReuqest(inodeWrapper, memCacheMissRequest, dataBuf,
-      &kvRequest);
-
-    UperReadRequest request;
-    request.requests = std::move(kvRequest);
-    request.buf = dataBuf;
-    request.inodeId = inodeId;
-    request.inodeWapper = inodeWrapper;
-    CURVEFS_ERROR ret;
-    ret = s3ClientAdaptor_->ReadFromLowlevel(request);
-
-
-   uint64_t len = 0;
-    uint64_t readOffset = 0;
-    size_t rSize = 0;
-    uint64_t chunkSize = s3ClientAdaptor_->GetChunkSize();
-    for (auto req : memCacheMissRequest) {
-        VLOG(6) << "read from kv request " << req.DebugString();
-       len = req.len;
-       readOffset = chunkSize * req.index + req.chunkPos;
-
-       s3ClientAdaptor_->ReadFromLowlevel(
-         inodeId, readOffset, len, dataBuf + req.bufOffset);
-
-
-
-    //     actualReadLen += req.len;  这不能要了，否则就是加了两次了
-     //  actualReadLen += rSize;  // 之前那个政务额的这里被注释掉了，对么？
-
-
-    }
-
-*/
 CURVEFS_ERROR VolumeClientAdaptorImpl::ReadFromLowlevel(UperReadRequest uperRequest) {
     uint64_t inodeId = uperRequest.inodeId;
     VLOG(1) << "whs read lowlevel start, inodeId is: " << inodeId;

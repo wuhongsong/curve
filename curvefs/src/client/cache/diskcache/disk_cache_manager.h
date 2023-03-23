@@ -38,8 +38,8 @@
 #include "curvefs/src/common/wrap_posix.h"
 #include "curvefs/src/common/utils.h"
 #include "curvefs/src/client/s3/client_s3.h"
-#include "curvefs/src/client/s3/disk_cache_write.h"
-#include "curvefs/src/client/s3/disk_cache_read.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_write.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_read.h"
 #include "curvefs/src/client/common/config.h"
 namespace curvefs {
 namespace client {

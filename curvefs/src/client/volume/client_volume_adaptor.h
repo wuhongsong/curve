@@ -42,9 +42,9 @@
 #include "curvefs/src/client/inode_cache_manager.h"
 #include "curvefs/src/client/rpcclient/mds_client.h"
 #include "curvefs/src/client/s3/client_s3.h"
-#include "curvefs/src/client/s3/client_s3_cache_manager.h"
+#include "curvefs/src/client/cache/fuse_client_cache_manager.h"
 // #include "curvefs/src/client/cache/client_cache_manager.h"
-#include "curvefs/src/client/s3/disk_cache_manager_impl.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_manager_impl.h"
 #include "src/common/wait_interval.h"
 
 #include "curvefs/src/client/volume/volume_storage.h"
@@ -62,19 +62,16 @@ using ::curvefs::volume::BlockDeviceClientImpl;
 using ::curvefs::volume::SpaceManager;
 using ::curvefs::volume::SpaceManagerImpl;
 
-
-
 // client use s3 internal interface
 class VolumeClientAdaptorImpl : public StorageAdaptor {
  public:
-//    VolumeClientAdaptorImpl() {}
+    VolumeClientAdaptorImpl() : StorageAdaptor(),
+      blockDeviceClient_(std::make_shared<BlockDeviceClientImpl>()) {}
+
     virtual ~VolumeClientAdaptorImpl() {
         LOG(INFO) << "delete VolumeClientAdaptorImpl";
     }
 public:
-    VolumeClientAdaptorImpl() : StorageAdaptor(),
-      blockDeviceClient_(std::make_shared<BlockDeviceClientImpl>()) {}
-
     // for UNIT_TEST
     // VolumeClientAdaptorImpl(
 
@@ -85,7 +82,6 @@ public:
     /// @param fsCacheManager
     /// @param diskCacheManagerImpl
     /// @param kvClientManager
-    /// @param startBackGround
     /// @param fsInfo
     /// @return
     CURVEFS_ERROR
@@ -95,7 +91,6 @@ public:
          std::shared_ptr<FsCacheManager> fsCacheManager,
          std::shared_ptr<DiskCacheManagerImpl> diskCacheManagerImpl,
          std::shared_ptr<KVClientManager> kvClientManager,
-         bool startBackGround,
          std::shared_ptr<FsInfo> fsInfo) override;
 
     /// @brief
@@ -106,13 +101,7 @@ public:
     /// @return
     CURVEFS_ERROR FuseOpInit(void *userdata, struct fuse_conn_info *conn) override;
 
-    int Stop() override {
-        StorageAdaptor::Stop();
-        storage_->Shutdown();
-        spaceManager_->Shutdown();
-        blockDeviceClient_->UnInit();
-        return 0;
-    }
+    int Stop() override;
 
     std::shared_ptr<VolumeStorage> getUnderStorage() {
         return storage_;

@@ -25,7 +25,7 @@
 #define CURVEFS_SRC_CLIENT_CLIENT_STORAGE_ADAPTOR_H_
 
 #include "curvefs/src/client/error_code.h"
-#include "curvefs/src/client/s3/disk_cache_manager_impl.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_manager_impl.h"
 #include "curvefs/proto/metaserver.pb.h"
 #include "curvefs/src/common/define.h"
 
@@ -38,7 +38,7 @@
 #include "curvefs/src/client/inode_cache_manager.h"
 #include "curvefs/src/client/rpcclient/mds_client.h"
 #include "curvefs/src/client/s3/client_s3.h"
-#include "curvefs/src/client/s3/client_s3_cache_manager.h"
+#include "curvefs/src/client/cache/fuse_client_cache_manager.h"
 #include "src/common/wait_interval.h"
 
 
@@ -94,7 +94,6 @@ class StorageAdaptor {
     /// @param fsCacheManager
     /// @param diskCacheManagerImpl
     /// @param kvClientManager
-    /// @param startBackGround
     /// @param fsInfo
     /// @return
     virtual CURVEFS_ERROR
@@ -104,7 +103,6 @@ class StorageAdaptor {
          std::shared_ptr<FsCacheManager> fsCacheManager,
          std::shared_ptr<DiskCacheManagerImpl> diskCacheManagerImpl,
          std::shared_ptr<KVClientManager> kvClientManager,
-         bool startBackGround,
          std::shared_ptr<FsInfo> fsInfo);
 
     virtual int Stop();
@@ -151,9 +149,7 @@ class StorageAdaptor {
         return fsCacheManager_;
     }
     uint32_t GetFlushInterval() { return flushIntervalSec_; }
-    uint32_t GetPrefetchBlocks() {
-        return prefetchBlocks_;
-    }
+
     uint32_t GetDiskCacheType() {
         return diskCacheType_;
     }
@@ -258,8 +254,6 @@ private:
     uint64_t blockSize_;
     uint64_t chunkSize_;
     uint32_t fuseMaxSize_;
-    uint32_t prefetchBlocks_;
-    uint32_t prefetchExecQueueNum_;
     std::string allocateServerEps_;
     uint32_t flushIntervalSec_;
     uint32_t chunkFlushThreads_;

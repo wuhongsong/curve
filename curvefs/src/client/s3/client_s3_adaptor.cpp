@@ -1,5 +1,5 @@
 #include "curvefs/src/client/s3/client_s3_adaptor.h"
-#include "curvefs/src/client/s3/disk_cache_manager_impl.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_manager_impl.h"
 #include "curvefs/src/common/s3util.h"
 
 namespace curvefs {
@@ -19,13 +19,27 @@ CURVEFS_ERROR S3ClientAdaptorImpl::Init(const FuseClientOption &option,
     std::shared_ptr<FsCacheManager> fsCacheManager,
     std::shared_ptr<DiskCacheManagerImpl> diskCacheManagerImpl,
     std::shared_ptr<KVClientManager> kvClientManager,
-    bool startBackGround, std::shared_ptr<FsInfo> fsInfo) {
+    std::shared_ptr<FsInfo> fsInfo) {
 
     LOG(INFO) << "whs S3ClientAdaptorImpl client0 !";
+    prefetchBlocks_ = option.s3Opt.s3ClientAdaptorOpt.prefetchBlocks;
+    prefetchExecQueueNum_ = option.s3Opt.s3ClientAdaptorOpt.prefetchExecQueueNum;
     CURVEFS_ERROR ret = StorageAdaptor::Init(option, inodeManager,
-      mdsClient, fsCacheManager, diskCacheManagerImpl, kvClientManager, true, fsInfo);
+      mdsClient, fsCacheManager, diskCacheManagerImpl, kvClientManager, fsInfo);
     if (ret != CURVEFS_ERROR::OK) {
         return ret;
+    }
+    if (nullptr != diskCacheManagerImpl) {
+        // init rpc send exec-queue
+        downloadTaskQueues_.resize(prefetchExecQueueNum_);
+        for (auto &q : downloadTaskQueues_) {
+            int rc = bthread::execution_queue_start(
+                &q, nullptr, &S3ClientAdaptorImpl::ExecAsyncDownloadTask, this);
+            if (rc != 0) {
+                LOG(ERROR) << "Init AsyncRpcQueues failed";
+                return CURVEFS_ERROR::INTERNAL;
+            }
+        }
     }
 
     client_ = std::make_shared<S3ClientImpl>();
@@ -37,6 +51,12 @@ CURVEFS_ERROR S3ClientAdaptorImpl::Init(const FuseClientOption &option,
 
 int S3ClientAdaptorImpl::Stop() {
     LOG(INFO) << "start Stopping S3ClientAdaptor.";
+    if (HasDiskCache()) {
+        for (auto &q : downloadTaskQueues_) {
+            bthread::execution_queue_stop(q);
+            bthread::execution_queue_join(q);
+        }
+    }
     StorageAdaptor::Stop();
     client_->Deinit();
     curve::common::S3Adapter::Shutdown();
@@ -71,7 +91,7 @@ CURVEFS_ERROR S3ClientAdaptorImpl::PrepareFlushTasks(const UperFlushRequest& req
     // generate flush task
     uint64_t chunkSize = GetChunkSize();
     uint64_t blockSize = GetBlockSize();
-    uint64_t chunkPos = req.offset % chunkSize;
+    uint64_t chunkPos = req.chunkPos;
     uint64_t blockPos = chunkPos % blockSize;
     uint64_t blockIndex = chunkPos / blockSize;
     // uint64_t blockPos = chunkPos_ % blockSize;
@@ -203,15 +223,50 @@ void S3ClientAdaptorImpl::GetBlockLoc(uint64_t offset, uint64_t *chunkIndex,
     *blockPos = offset % chunkSize % blockSize;
 }
 
+void S3ClientAdaptorImpl::PrefetchS3Objs(uint64_t inodeId,
+    const std::vector<std::pair<std::string, uint64_t>> &prefetchObjs) {
+    for (auto &obj : prefetchObjs) {
+        std::string name = obj.first;
+        uint64_t readLen = obj.second;
+        curve::common::LockGuard lg(downloadMtx_);
+        if (downloadingObj_.find(name) != downloadingObj_.end()) {
+            VLOG(9) << "obj is already in downloading: " << name
+                    << ", size: " << downloadingObj_.size();
+            continue;
+        }
+        if (GetDiskCacheManager()->IsCached(name)) {
+            VLOG(9) << "downloading is exist in cache: " << name
+                    << ", size: " << downloadingObj_.size();
+            continue;
+        }
+        VLOG(9) << "download start, inode is: " << inodeId
+                << ", obj name is: " << name
+                << ", downloading size is: " << downloadingObj_.size();
+        downloadingObj_.emplace(name);
+
+        auto inode = inodeId;
+        auto task = [this, name, inode, readLen]() {
+            char *dataCacheS3 = new char[readLen];
+            auto context = std::make_shared<GetObjectAsyncContext>();
+            context->key = name;
+            context->buf = dataCacheS3;
+            context->offset = 0;
+            context->len = readLen;
+            context->cb = AsyncPrefetchCallback{inode, this};
+            VLOG(9) << "prefetch start: " << context->key
+                    << ", len: " << context->len;
+            GetS3Client()->DownloadAsync(context);
+        };
+        PushAsyncTask(task);
+    }
+    return;
+}
+
 void S3ClientAdaptorImpl::PrefetchForBlock(const S3ReadRequest &req,
                                        uint64_t fileLen, uint64_t blockSize,
                                        uint64_t chunkSize,
                                        uint64_t startBlockIndex) {
-                              /* whs
-    uint32_t prefetchBlocks = s3ClientAdaptor_->GetPrefetchBlocks();
-
-
-
+    uint32_t prefetchBlocks = GetPrefetchBlocks();
     std::vector<std::pair<std::string, uint64_t>> prefetchObjs;
 
     uint64_t blockIndex = startBlockIndex;
@@ -230,9 +285,7 @@ void S3ClientAdaptorImpl::PrefetchForBlock(const S3ReadRequest &req,
             break;
         }
     }
-
-    PrefetchS3Objs(prefetchObjs);
-    */
+    PrefetchS3Objs(req.inodeId, prefetchObjs);
 }
 
 void S3ClientAdaptorImpl::HandleReadRequest(
@@ -655,12 +708,11 @@ int S3ClientAdaptorImpl::ReadKVRequest(
         uint64_t blockSize = GetBlockSize();
         GetBlockLoc(req->offset, &chunkIndex, &chunkPos, &blockIndex,
                     &blockPos);
-/* whs need to do
         // prefetch
         if (HasDiskCache()) {
-            PrefetchForBlock(*req, fileLen, blockSize, chunkSize, blockIndex);
+            VLOG(6) << "no prefetch";
+   //         PrefetchForBlock(*req, fileLen, blockSize, chunkSize, blockIndex);
         }
-*/
         // read request
         // |--------------------------------|----------------------------------|
         // 0                             blockSize                   2*blockSize
@@ -803,6 +855,21 @@ CURVEFS_ERROR S3ClientAdaptorImpl::Truncate(InodeWrapper *inodeWrapper, uint64_t
         }
         return CURVEFS_ERROR::OK;
     }
+}
+
+int S3ClientAdaptorImpl::ExecAsyncDownloadTask(
+    void *meta,
+    bthread::TaskIterator<AsyncDownloadTask> &iter) {  // NOLINT
+    if (iter.is_queue_stopped()) {
+        return 0;
+    }
+
+    for (; iter; ++iter) {
+        auto &task = *iter;
+        task();
+    }
+
+    return 0;
 }
 
 }
