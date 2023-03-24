@@ -87,10 +87,7 @@ CURVEFS_ERROR FuseVolumeClient::FuseOpInit(void *userdata,
     LOG(INFO) << "fuse op Init success: " << mountOwner;
     return CURVEFS_ERROR::OK;
 }
-/*
- *whs need to do : write read 是不是可以放到
- * */
-// whs need to do ---> move to itself？
+
 CURVEFS_ERROR FuseVolumeClient::FuseOpWrite(fuse_req_t req, fuse_ino_t ino,
         const char *buf, size_t size, off_t off,
         struct fuse_file_info *fi,

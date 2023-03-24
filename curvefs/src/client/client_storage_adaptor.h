@@ -121,9 +121,6 @@ class StorageAdaptor {
     int Read(uint64_t inodeId, uint64_t offset, uint64_t length, char *buf);
     virtual CURVEFS_ERROR ReadFromLowlevel(UperReadRequest request) = 0;
 
-    // whs need todo
-    // int ReadS3(uint64_t inodeId, uint64_t offset, uint64_t length, char *buf);
-
     virtual CURVEFS_ERROR Truncate(InodeWrapper
       *inodeWrapper,uint64_t size) = 0;
 
@@ -220,11 +217,7 @@ class StorageAdaptor {
             return CachePoily::NCache;
         }
     }
-/* whs need todo
-    std::shared_ptr<FsInfo> GetFsInfo() {
-        return fsInfo_;
-    }
-*/
+
     std::shared_ptr<MdsClient> GetMdsClient() {
         return mdsClient_;
     }

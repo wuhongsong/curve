@@ -28,7 +28,6 @@
 
 #include "curvefs/src/client/fuse_client.h"
 #include "curvefs/src/client/volume/client_volume_adaptor.h"
-#include "curvefs/src/client/volume/volume_storage.h" // whs need to do
 #include "curvefs/src/volume/block_device_client.h"
 #include "curvefs/src/volume/space_manager.h"
 
