@@ -27,8 +27,12 @@
 #include <list>
 
 #include "absl/memory/memory.h"
+
 #include "curvefs/src/client/s3/client_s3_adaptor.h"
 #include "curvefs/src/common/s3util.h"
+
+#define VOLUNE_BLOCK_SIZE 4194304
+#define VOLUME_CHUNK_SIZE 67108864
 
 namespace curvefs {
 
@@ -211,27 +215,6 @@ int StorageAdaptor::Read(uint64_t inodeId, uint64_t offset, uint64_t length, cha
     return ret;
 }
 
-/*
-
-// whs need todo
-int StorageAdaptor::ReadS3(uint64_t inodeId, uint64_t offset, uint64_t length, char *buf) {
-    VLOG(6) << "read start offset:" << offset << ", len:" << length
-            << ", fsId:" << fsId_ << ", inodeId:" << inodeId;
-    uint64_t start = butil::cpuwide_time_us();
-    FileCacheManagerPtr fileCacheManager =
-        fsCacheManager_->FindOrCreateFileCacheManager(fsId_, inodeId);
-
-    int ret = fileCacheManager->ReadS3(inodeId, offset, length, buf);
-    VLOG(6) << "read end inodeId:" << inodeId << ",ret:" << ret;
-    if (ret < 0) {
-        return ret;
-    }
-
-    VLOG(6) << "read end offset:" << offset << ", len:" << length
-            << ", fsId:" << fsId_ << ", inodeId:" << inodeId;
-    return ret;
-}
-*/
 void StorageAdaptor::BackGroundFlush() {
     while (!toStop_.load(std::memory_order_acquire)) {
         {

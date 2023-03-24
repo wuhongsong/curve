@@ -196,17 +196,6 @@ class DataCache : public std::enable_shared_from_this<DataCache> {
                              const char *data);
     void AddDataBefore(uint64_t len, const char *data);
 
-    CURVEFS_ERROR PrepareFlushTasks(
-        uint64_t inodeId, char *data,
-        std::vector<std::shared_ptr<PutObjectAsyncContext>> *s3Tasks,
-        std::vector<std::shared_ptr<SetKVCacheTask>> *kvCacheTasks,
-        uint64_t *chunkId, uint64_t *writeOffset);
-
-    void FlushTaskExecute(
-        CachePoily cachePoily,
-        const std::vector<std::shared_ptr<PutObjectAsyncContext>> &s3Tasks,
-        const std::vector<std::shared_ptr<SetKVCacheTask>> &kvCacheTasks);
-
     CachePoily GetCachePolicy(bool toS3);
 
  private:

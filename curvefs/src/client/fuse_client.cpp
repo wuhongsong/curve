@@ -1354,16 +1354,6 @@ CURVEFS_ERROR FuseClient::FuseOpSymlink(fuse_req_t req, const char *link,
     return ret;
 }
 
-// whs need to do - edit type
-CURVEFS_ERROR FuseClient::FuseOpLink(fuse_req_t req, fuse_ino_t ino,
-                                     fuse_ino_t newparent, const char *newname,
-                                     fuse_entry_param *e) {
-    VLOG(1) << "FuseOpLink, ino: " << ino << ", newparent: " << newparent
-            << ", newname: " << newname;
-    return FuseClient::FuseOpLink(
-        req, ino, newparent, newname, FsFileType::TYPE_S3, e);
-}
-
 CURVEFS_ERROR FuseClient::FuseOpLink(fuse_req_t req, fuse_ino_t ino,
                                      fuse_ino_t newparent, const char *newname,
                                      FsFileType type,

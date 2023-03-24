@@ -113,7 +113,7 @@ public:
     /// @return
     CURVEFS_ERROR FlushDataCache(const UperFlushRequest& req, uint64_t* writeOffset) override;
 
-    CURVEFS_ERROR ReadFromLowlevel(UperReadRequest request) override;  // whs need todo
+    CURVEFS_ERROR ReadFromLowlevel(UperReadRequest request) override;
 
     CURVEFS_ERROR Truncate(InodeWrapper *inodeWrapper, uint64_t size) { return CURVEFS_ERROR::OK;}
 

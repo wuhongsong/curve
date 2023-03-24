@@ -213,7 +213,7 @@ class FuseClient {
 
     virtual CURVEFS_ERROR FuseOpLink(fuse_req_t req, fuse_ino_t ino,
                                      fuse_ino_t newparent, const char* newname,
-                                     fuse_entry_param* e);
+                                     fuse_entry_param* e) = 0;
 
     virtual CURVEFS_ERROR FuseOpReadLink(fuse_req_t req, fuse_ino_t ino,
                                          std::string* linkStr);
@@ -340,12 +340,9 @@ class FuseClient {
     }
 
  private:
- /* whs need to do
     virtual CURVEFS_ERROR Truncate(InodeWrapper* inode, uint64_t length) = 0;
-*/
-    virtual void FlushData() = 0;
 
-    virtual CURVEFS_ERROR Truncate(InodeWrapper* inode, uint64_t length) {return CURVEFS_ERROR::OK;}
+    virtual void FlushData() = 0;
 
     CURVEFS_ERROR UpdateParentMCTimeAndNlink(
         fuse_ino_t parent, FsFileType type,  NlinkChange nlink);
