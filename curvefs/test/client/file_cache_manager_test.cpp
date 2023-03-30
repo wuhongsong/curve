@@ -24,7 +24,7 @@
 #include <gmock/gmock.h>
 
 #include "curvefs/src/client/s3/client_s3_adaptor.h"
-#include "curvefs/src/client/s3/client_s3_cache_manager.h"
+#include "curvefs/src/client/cache/fuse_client_cache_manager.h"
 #include "curvefs/test/client/mock_client_s3_cache_manager.h"
 #include "curvefs/test/client/mock_inode_cache_manager.h"
 #include "curvefs/test/client/mock_client_s3.h"
@@ -55,9 +55,14 @@ class FileCacheManagerTest : public testing::Test {
     FileCacheManagerTest() {}
     ~FileCacheManagerTest() {}
     void SetUp() override {
+        Aws::InitAPI(awsOptions_);
         uint64_t inodeId = 1;
         uint64_t fsId = 2;
-        S3ClientAdaptorOption option;
+        FuseClientOption fuseOption;
+        fuseOption.s3Opt.s3AdaptrOpt.asyncThreadNum = 1;
+        fuseOption.listDentryThreads = 1;
+        fuseOption.warmupThreadsNum = 1;
+        S3ClientAdaptorOption& option = fuseOption.s3Opt.s3ClientAdaptorOpt;
         option.blockSize = 1 * 1024 * 1024;
         option.chunkSize = 4 * 1024 * 1024;
         option.pageSize = 64 * 1024;
@@ -67,14 +72,17 @@ class FileCacheManagerTest : public testing::Test {
         option.writeCacheMaxByte = 10485760000;
         option.diskCacheOpt.diskCacheType = (DiskCacheType)0;
         option.chunkFlushThreads = 5;
+        option.prefetchExecQueueNum = 1;
         s3ClientAdaptor_ = new S3ClientAdaptorImpl();
         auto fsCacheManager_ = std::make_shared<FsCacheManager>(
             s3ClientAdaptor_, option.readCacheMaxByte, option.writeCacheMaxByte,
             nullptr);
         mockInodeManager_ = std::make_shared<MockInodeCacheManager>();
-        mockS3Client_ = std::make_shared<MockS3Client>();
-        s3ClientAdaptor_->Init(option, mockS3Client_, mockInodeManager_,
-                               nullptr, fsCacheManager_, nullptr, nullptr);
+
+       // mockS3Client_ = std::make_shared<MockS3Client>();
+
+        s3ClientAdaptor_->Init(fuseOption, mockInodeManager_,
+                               nullptr, fsCacheManager_, nullptr, nullptr, nullptr);
         s3ClientAdaptor_->SetFsId(fsId);
         fileCacheManager_ = std::make_shared<FileCacheManager>(
             fsId, inodeId, s3ClientAdaptor_, nullptr);
@@ -84,7 +92,7 @@ class FileCacheManagerTest : public testing::Test {
     }
 
     void TearDown() override {
-        // s3ClientAdaptor_->Stop();
+        Aws::ShutdownAPI(awsOptions_);
         delete s3ClientAdaptor_;
         s3ClientAdaptor_ = nullptr;
     }
@@ -96,6 +104,7 @@ class FileCacheManagerTest : public testing::Test {
     std::shared_ptr<MockInodeCacheManager> mockInodeManager_;
     std::shared_ptr<MockS3Client> mockS3Client_;
     std::shared_ptr<KVClientManager> kvClientManager_;
+    Aws::SDKOptions awsOptions_;
 };
 
 TEST_F(FileCacheManagerTest, test_FindOrCreateChunkCacheManager) {

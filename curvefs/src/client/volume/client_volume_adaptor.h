@@ -68,6 +68,10 @@ class VolumeClientAdaptorImpl : public StorageAdaptor {
     VolumeClientAdaptorImpl() : StorageAdaptor(),
       blockDeviceClient_(std::make_shared<BlockDeviceClientImpl>()) {}
 
+    VolumeClientAdaptorImpl(const std::shared_ptr<BlockDeviceClient> &blockDeviceClient) : StorageAdaptor(),
+      blockDeviceClient_(blockDeviceClient) {}
+
+
     virtual ~VolumeClientAdaptorImpl() {
         LOG(INFO) << "delete VolumeClientAdaptorImpl";
     }
@@ -84,7 +88,7 @@ public:
     /// @param kvClientManager
     /// @param fsInfo
     /// @return
-    CURVEFS_ERROR
+    virtual CURVEFS_ERROR
     Init(const FuseClientOption &option,
          std::shared_ptr<InodeCacheManager> inodeManager,
          std::shared_ptr<MdsClient> mdsClient,
@@ -99,23 +103,25 @@ public:
     /// @param fsid
     /// @param fsname
     /// @return
-    CURVEFS_ERROR FuseOpInit(void *userdata, struct fuse_conn_info *conn) override;
+    virtual CURVEFS_ERROR FuseOpInit(void *userdata, struct fuse_conn_info *conn) override;
 
-    int Stop() override;
-
-    std::shared_ptr<VolumeStorage> getUnderStorage() {
-        return storage_;
-    }
+    virtual int Stop() override;
 
     /// @brief
     /// @param req
     /// @param writeOffset
     /// @return
-    CURVEFS_ERROR FlushDataCache(const UperFlushRequest& req, uint64_t* writeOffset) override;
+    virtual CURVEFS_ERROR FlushDataCache(const UperFlushRequest& req, uint64_t* writeOffset) override;
 
-    CURVEFS_ERROR ReadFromLowlevel(UperReadRequest request) override;
+    virtual CURVEFS_ERROR ReadFromLowlevel(UperReadRequest request) override;
 
-    CURVEFS_ERROR Truncate(InodeWrapper *inodeWrapper, uint64_t size) { return CURVEFS_ERROR::OK;}
+    virtual CURVEFS_ERROR Truncate(InodeWrapper *inodeWrapper, uint64_t size) { return CURVEFS_ERROR::OK;}
+
+    /// @brief
+    /// @return
+    std::shared_ptr<VolumeStorage> getUnderStorage() {
+        return storage_;
+    }
 
  private:
     std::shared_ptr<BlockDeviceClient> blockDeviceClient_;

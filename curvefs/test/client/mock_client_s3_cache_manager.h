@@ -26,7 +26,7 @@
 #include <gmock/gmock.h>
 #include <utility>
 #include <vector>
-#include "curvefs/src/client/s3/client_s3_cache_manager.h"
+#include "curvefs/src/client/cache/fuse_client_cache_manager.h"
 
 namespace curvefs {
 namespace client {

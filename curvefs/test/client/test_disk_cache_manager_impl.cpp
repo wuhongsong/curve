@@ -30,7 +30,7 @@
 #include "curvefs/test/client/mock_disk_cache_base.h"
 #include "curvefs/test/client/mock_client_s3.h"
 #include "curvefs/test/client/mock_test_posix_wapper.h"
-#include "curvefs/src/client/s3/disk_cache_manager_impl.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_manager_impl.h"
 #include "curvefs/src/client/s3/client_s3_adaptor.h"
 
 namespace curvefs {
@@ -97,6 +97,7 @@ class TestDiskCacheManagerImpl : public ::testing::Test {
 
 TEST_F(TestDiskCacheManagerImpl, Init) {
     S3ClientAdaptorOption s3AdaptorOption;
+    s3AdaptorOption.diskCacheOpt.threads = 5;
     EXPECT_CALL(*diskCacheManager_, Init(_, _)).WillOnce(Return(-1));
     int ret = diskCacheManagerImpl_->Init(s3AdaptorOption);
     ASSERT_EQ(-1, ret);

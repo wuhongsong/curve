@@ -53,9 +53,12 @@ class FuseVolumeClient : public FuseClient {
         const std::shared_ptr<MetaServerClient> &metaClient,
         const std::shared_ptr<InodeCacheManager> &inodeManager,
         const std::shared_ptr<DentryCacheManager> &dentryManager,
-        const std::shared_ptr<BlockDeviceClient> &blockDeviceClient)
+        const std::shared_ptr<BlockDeviceClient> &blockDeviceClient,
+        const std::shared_ptr<VolumeClientAdaptorImpl> &storageAdaptor)
         : FuseClient(mdsClient, metaClient, inodeManager, dentryManager,
-                     nullptr) {}
+                     nullptr) {
+            storageAdaptor_ = storageAdaptor;
+        }
 
     CURVEFS_ERROR Init(const FuseClientOption &option) override;
 

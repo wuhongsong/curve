@@ -43,7 +43,7 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::Init(const FuseClientOption &option,
          std::shared_ptr<KVClientManager> kvClientManager,
          std::shared_ptr<FsInfo> fsInfo) {
 
-    LOG(ERROR) << "whs volume adaptor fuse init client0 !";
+    VLOG(1) << "volume adaptor init start.";
     volOpts_ = option.volumeOpt;
     auto ret = StorageAdaptor::Init(option, inodeManager,
       mdsClient, fsCacheManager, diskCacheManagerImpl, kvClientManager, fsInfo);
@@ -58,19 +58,16 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::Init(const FuseClientOption &option,
         return CURVEFS_ERROR::INTERNAL;
     }
 
-    LOG(ERROR) << "whs volume adaptor fuse init client1 !";
+    VLOG(1) << "volume adaptor init sucess.";
     return ret;
 }
 
 CURVEFS_ERROR VolumeClientAdaptorImpl::FuseOpInit(void *userdata,
   struct fuse_conn_info *conn) {
-    LOG(ERROR) << "whs volume adaptor fuse init 1!";
-    StorageAdaptor::FuseOpInit(userdata, conn);
-
+    VLOG(1) << "volume fuse op init start!";
     const auto &vol = fsInfo_->detail().volume();
     const auto &volName = vol.volumename();
     const auto &user = vol.user();
-
     auto ret= blockDeviceClient_->Open(volName, user);
     if (!ret) {
         LOG(ERROR) << "BlockDeviceClientImpl open failed, ret = " << ret
@@ -107,15 +104,21 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::FuseOpInit(void *userdata,
     extentOpt.sliceSize = vol.slicesize();
 
     ExtentCache::SetOption(extentOpt);
-
+    VLOG(1) << "volume fuse op init sucess.";
     return CURVEFS_ERROR::OK;
 }
 
 int VolumeClientAdaptorImpl::Stop() {
+    VLOG(1) << "volume adaptor stop...";
     StorageAdaptor::Stop();
-    storage_->Shutdown();
-    spaceManager_->Shutdown();
+    if (nullptr != storage_) {
+        storage_->Shutdown();
+    }
+    if (nullptr != spaceManager_) {
+        spaceManager_->Shutdown();
+    }
     blockDeviceClient_->UnInit();
+    VLOG(1) << "volume adaptor stop sucess.";
     return 0;
 }
 
@@ -127,19 +130,19 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::FlushDataCache(const UperFlushRequest& re
     uint64_t inodeOffset = req.offset;
     uint64_t len = req.length;
     const char* data = req.buf;
-    VLOG(0) << "whs volume flush dataCache, inode: "
+    VLOG(9) << "volume flush dataCache, inode: "
        << inodeId<< ", offset: " << inodeOffset
        << ", length: " << len;
 
     CURVEFS_ERROR ret = storage_->Write(inodeId, inodeOffset, len, data);
     if (ret != CURVEFS_ERROR::OK) {
-        VLOG(0) << "whs volume flush dataCache err, inode: "
+        VLOG(0) << "volume flush dataCache err, inode: "
             << inodeId<< ", offset: " << inodeOffset
             << ", length: " << len;
         return ret;
     }
 
-    VLOG(0) << "whs volume flush dataCache end, inode: "
+    VLOG(9) << "volume flush dataCache end, inode: "
        << inodeId<< ", offset: " << inodeOffset
        << ", length: " << len;
 // 这个正确么？
@@ -149,7 +152,7 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::FlushDataCache(const UperFlushRequest& re
 
 CURVEFS_ERROR VolumeClientAdaptorImpl::ReadFromLowlevel(UperReadRequest uperRequest) {
     uint64_t inodeId = uperRequest.inodeId;
-    VLOG(1) << "whs read lowlevel start, inodeId is: " << inodeId;
+    VLOG(9) << "read lowlevel start, inodeId is: " << inodeId;
     std::vector<ReadRequest> requests;
     char *buf = uperRequest.buf;;
     requests = std::move(uperRequest.requests);
@@ -163,16 +166,15 @@ CURVEFS_ERROR VolumeClientAdaptorImpl::ReadFromLowlevel(UperReadRequest uperRequ
         ret = storage_->Read(
           inodeId, readOffset, len, buf + req.bufOffset);
         if (ret != CURVEFS_ERROR::OK) {
-            VLOG(0) << "whs volume flush dataCache err, inode: "
+            VLOG(0) << "volume flush dataCache err, inode: "
                 << inodeId << ", offset: " << readOffset
                 << ", length: " << len;
             return ret;
         }
-        // whs to do - retry
+        // whs to do - retry?
     }
 
-    VLOG(3) << "whs read lowlevel end, inodeId is: "<< inodeId;
-
+    VLOG(9) << "read lowlevel end, inodeId is: "<< inodeId;
     return ret;
 }
 

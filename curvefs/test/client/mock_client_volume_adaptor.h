@@ -2,7 +2,7 @@
  * @Author: hzwuhongsong
  * @Date: 2023-03-27 16:19:22
  * @LastEditors: hzwuhongsong hzwuhongsong@corp.netease.com
- * @LastEditTime: 2023-03-31 14:15:22
+ * @LastEditTime: 2023-03-29 17:52:13
  * @Description: cursorMoveOnType
  */
 /*
@@ -41,13 +41,8 @@
 namespace curvefs {
 namespace client {
 
-class MockS3ClientAdaptor : public StorageAdaptor {
+class MockVolumeClientAdaptor : public VolumeClientAdaptorImpl {
  public:
-    MockS3ClientAdaptor() : StorageAdaptor() {}
-    ~MockS3ClientAdaptor() {
-        StorageAdaptor::Stop();
-    }
-
     MOCK_METHOD7(Init,
                  CURVEFS_ERROR(const S3ClientAdaptorOption &option,
                                std::shared_ptr<InodeCacheManager> inodeManager,
@@ -59,34 +54,52 @@ class MockS3ClientAdaptor : public StorageAdaptor {
                                     kvClientManager,
                                std::shared_ptr<FsInfo> fsInfo));
 
+/*    virtual CURVEFS_ERROR
+    Init(const FuseClientOption &option,
+         std::shared_ptr<InodeCacheManager> inodeManager,
+         std::shared_ptr<MdsClient> mdsClient,
+         std::shared_ptr<FsCacheManager> fsCacheManager,
+         std::shared_ptr<DiskCacheManagerImpl> diskCacheManagerImpl,
+         std::shared_ptr<KVClientManager> kvClientManager,
+         std::shared_ptr<FsInfo> fsInfo) override;
+
+
+    virtual CURVEFS_ERROR FuseOpInit(void *userdata, struct fuse_conn_info *conn) override;
+
+    virtual int Stop() override;
+
+    virtual CURVEFS_ERROR FlushDataCache(const UperFlushRequest& req, uint64_t* writeOffset) override;
+
+    virtual CURVEFS_ERROR ReadFromLowlevel(UperReadRequest request) override;
+
+    virtual CURVEFS_ERROR Truncate(InodeWrapper *inodeWrapper, uint64_t size) { return CURVEFS_ERROR::OK;}
+
+ *
+ *
+ */
+
+    MOCK_METHOD7(Init, CURVEFS_ERROR(
+        const FuseClientOption &option,
+         std::shared_ptr<InodeCacheManager> inodeManager,
+         std::shared_ptr<MdsClient> mdsClient,
+         std::shared_ptr<FsCacheManager> fsCacheManager,
+         std::shared_ptr<DiskCacheManagerImpl> diskCacheManagerImpl,
+         std::shared_ptr<KVClientManager> kvClientManager,
+         std::shared_ptr<FsInfo> fsInfo));
+
+
     MOCK_METHOD2(FuseOpInit, CURVEFS_ERROR(void *userdata, struct fuse_conn_info *conn));
 
     MOCK_METHOD2(FlushDataCache, CURVEFS_ERROR(const UperFlushRequest& req, uint64_t* writeOffset));
 
     MOCK_METHOD1(ReadFromLowlevel, CURVEFS_ERROR(UperReadRequest request));
 
-    MOCK_METHOD4(Write, int(uint64_t inodeId, uint64_t offset, uint64_t length,
-                            const char* buf));
+    MOCK_METHOD4(Write, int(uint64_t inodeId, uint64_t offset,
+                               uint64_t length, const char *buf));
 
-    MOCK_METHOD4(Read, int(uint64_t inodeId, uint64_t offset, uint64_t length,
-                           char* buf));
-    MOCK_METHOD1(ReleaseCache, void(uint64_t inodeId));
-    MOCK_METHOD1(Flush, CURVEFS_ERROR(uint64_t inodeId));
-    MOCK_METHOD1(FlushAllCache, CURVEFS_ERROR(uint64_t inodeId));
-    MOCK_METHOD0(FsSync, CURVEFS_ERROR());
-    MOCK_METHOD0(Stop, int());
-    MOCK_METHOD2(Truncate, CURVEFS_ERROR(InodeWrapper* inode, uint64_t size));
-    MOCK_METHOD3(AllocS3ChunkId, FSStatusCode(uint32_t fsId, uint32_t idNum,
-                                              uint64_t *chunkId));
-    MOCK_METHOD1(SetFsId, void(uint32_t fsId));
-    MOCK_METHOD1(InitMetrics, void(const std::string &fsName));
-    MOCK_METHOD3(CollectMetrics,
-                 void(InterfaceMetric *interface, int count, uint64_t start));
-    MOCK_METHOD0(GetDiskCacheManager, std::shared_ptr<DiskCacheManagerImpl>());
-    MOCK_METHOD0(GetS3Client, std::shared_ptr<S3Client>());
-    MOCK_METHOD0(GetBlockSize, uint64_t());
-    MOCK_METHOD0(GetChunkSize, uint64_t());
-    MOCK_METHOD0(HasDiskCache, bool());
+    MOCK_METHOD4(Read, int(uint64_t inodeId, uint64_t offset, uint64_t length, char *buf));
+
+    MOCK_METHOD2(Truncate, CURVEFS_ERROR(InodeWrapper *inodeWrapper, uint64_t size));
 };
 
 }  // namespace client

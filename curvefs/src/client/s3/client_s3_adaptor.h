@@ -89,6 +89,10 @@ S3ReadRequestVecDebugString(const std::vector<S3ReadRequest> &reqs) {
 class S3ClientAdaptorImpl : public StorageAdaptor {
  public:
     S3ClientAdaptorImpl() : StorageAdaptor() {}
+    // for unittest
+    S3ClientAdaptorImpl(std::shared_ptr<S3Client> client) : StorageAdaptor() {
+      client_ = client;
+    }
     virtual ~S3ClientAdaptorImpl() {
         LOG(INFO) << "delete S3ClientAdaptorImpl";
     }

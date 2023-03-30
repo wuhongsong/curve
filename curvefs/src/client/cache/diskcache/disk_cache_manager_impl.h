@@ -78,7 +78,7 @@ class DiskCacheManagerImpl {
      * @param[in] option config option
      * @return success: 0, fail : < 0
      */
-    int Init(const S3ClientAdaptorOption option);
+    virtual int Init(const S3ClientAdaptorOption option);
     /**
      * @brief Write obj
      * @param[in] name obj name

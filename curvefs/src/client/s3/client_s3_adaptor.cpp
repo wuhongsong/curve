@@ -21,11 +21,12 @@ CURVEFS_ERROR S3ClientAdaptorImpl::Init(const FuseClientOption &option,
     std::shared_ptr<KVClientManager> kvClientManager,
     std::shared_ptr<FsInfo> fsInfo) {
 
-    LOG(INFO) << "whs S3ClientAdaptorImpl client0 !";
+    LOG(INFO) << "whs S3ClientAdaptorImpl client0 !" ;
     prefetchBlocks_ = option.s3Opt.s3ClientAdaptorOpt.prefetchBlocks;
     prefetchExecQueueNum_ = option.s3Opt.s3ClientAdaptorOpt.prefetchExecQueueNum;
     CURVEFS_ERROR ret = StorageAdaptor::Init(option, inodeManager,
       mdsClient, fsCacheManager, diskCacheManagerImpl, kvClientManager, fsInfo);
+    LOG(INFO) << "whs S3ClientAdaptorImpl client0 !" << prefetchExecQueueNum_;
     if (ret != CURVEFS_ERROR::OK) {
         return ret;
     }
@@ -33,6 +34,7 @@ CURVEFS_ERROR S3ClientAdaptorImpl::Init(const FuseClientOption &option,
         // init rpc send exec-queue
         downloadTaskQueues_.resize(prefetchExecQueueNum_);
         for (auto &q : downloadTaskQueues_) {
+    LOG(INFO) << "whs S3ClientAdaptorImpl client0 !" ;
             int rc = bthread::execution_queue_start(
                 &q, nullptr, &S3ClientAdaptorImpl::ExecAsyncDownloadTask, this);
             if (rc != 0) {
@@ -41,8 +43,10 @@ CURVEFS_ERROR S3ClientAdaptorImpl::Init(const FuseClientOption &option,
             }
         }
     }
+    if (nullptr == client_) {
+        client_ = std::make_shared<S3ClientImpl>();
+    }
 
-    client_ = std::make_shared<S3ClientImpl>();
     client_->Init(option.s3Opt.s3AdaptrOpt);
 
     LOG(INFO) << "whs S3ClientAdaptorImpl client1 !";

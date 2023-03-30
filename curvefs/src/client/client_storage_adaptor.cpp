@@ -79,11 +79,10 @@ StorageAdaptor::Init(const FuseClientOption &fuseOption,
     mdsClient_ = mdsClient;
     fsCacheManager_ = fsCacheManager;
     waitInterval_.Init(option.intervalSec * 1000);
-    diskCacheManagerImpl_ = diskCacheManagerImpl;
     fsInfo_ = fsInfo;
     kvClientManager_ = std::move(kvClientManager);
-    LOG(ERROR) << "whs StorageAdaptor client2 !";
-    if (HasDiskCache()) {
+
+    if (nullptr != diskCacheManagerImpl) {
         diskCacheManagerImpl_ = diskCacheManagerImpl;
         if (diskCacheManagerImpl_->Init(option) < 0) {
             LOG(ERROR) << "Init disk cache failed";

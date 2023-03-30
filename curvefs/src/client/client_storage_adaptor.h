@@ -84,8 +84,9 @@ enum class CachePoily {
 class StorageAdaptor {
  public:
     StorageAdaptor() {}
-    virtual ~StorageAdaptor() = default;
-
+    virtual ~StorageAdaptor() {
+        Stop();
+    }
 
     /// @brief
     /// @param option
@@ -113,12 +114,12 @@ class StorageAdaptor {
     /// @param writeOffset
     /// @return
     virtual CURVEFS_ERROR FlushDataCache(const UperFlushRequest& req, uint64_t* writeOffset) = 0;
-    int Write(uint64_t inodeId, uint64_t offset, uint64_t length, const char *buf);
+    virtual int Write(uint64_t inodeId, uint64_t offset, uint64_t length, const char *buf);
 
     /**
      * @brief read data
      */
-    int Read(uint64_t inodeId, uint64_t offset, uint64_t length, char *buf);
+    virtual int Read(uint64_t inodeId, uint64_t offset, uint64_t length, char *buf);
     virtual CURVEFS_ERROR ReadFromLowlevel(UperReadRequest request) = 0;
 
     virtual CURVEFS_ERROR Truncate(InodeWrapper
@@ -130,9 +131,9 @@ class StorageAdaptor {
     }
 
     void ReleaseCache(uint64_t inodeId);
-    CURVEFS_ERROR Flush(uint64_t inodeId);
-    CURVEFS_ERROR FlushAllCache(uint64_t inodeId);
-    CURVEFS_ERROR FsSync();
+    virtual CURVEFS_ERROR Flush(uint64_t inodeId);
+    virtual CURVEFS_ERROR FlushAllCache(uint64_t inodeId);
+    virtual CURVEFS_ERROR FsSync();
     void SetFsId(uint32_t fsId) {
         fsId_ = fsId;
     }
@@ -227,7 +228,9 @@ class StorageAdaptor {
     }
 
     void SetMountOwner(const std::string& mountOwner) {
+            VLOG(0) << "whs FuseClient client8 !";
         mountOwner_ = mountOwner;
+            VLOG(0) << "whs FuseClient client8 !";
     }
 
     void Enqueue(std::shared_ptr<FlushChunkCacheContext> context);

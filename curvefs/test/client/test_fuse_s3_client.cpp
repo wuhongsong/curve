@@ -21,6 +21,7 @@
  */
 
 
+
 #include <gmock/gmock-generated-actions.h>
 #include <gmock/gmock-more-actions.h>
 #include <gmock/gmock.h>
@@ -32,9 +33,9 @@
 #include "curvefs/proto/metaserver.pb.h"
 #include "curvefs/src/client/common/common.h"
 #include "curvefs/src/client/error_code.h"
-#include "curvefs/src/client/fuse_s3_client.h"
+#include "curvefs/src/client/s3/fuse_s3_client.h"
 #include "curvefs/src/client/rpcclient/metaserver_client.h"
-#include "curvefs/src/client/s3/disk_cache_manager_impl.h"
+#include "curvefs/src/client/cache/diskcache/disk_cache_manager_impl.h"
 #include "curvefs/src/client/warmup/warmup_manager.h"
 #include "curvefs/src/common/define.h"
 #include "curvefs/test/client/mock_client_s3.h"
@@ -88,9 +89,10 @@ static bool operator==(const Dentry &lhs, const Dentry &rhs) {
 class TestFuseS3Client : public ::testing::Test {
  protected:
     TestFuseS3Client() {}
-    ~TestFuseS3Client() {}
+    ~TestFuseS3Client() { LOG(ERROR) << "whs fuse op init failed."; }
 
     virtual void SetUp() {
+        curvefs::client::common::FLAGS_supportKVcache = false;
         Aws::InitAPI(awsOptions_);
         mdsClient_ = std::make_shared<MockMdsClient>();
         metaClient_ = std::make_shared<MockMetaServerClient>();
@@ -100,6 +102,7 @@ class TestFuseS3Client : public ::testing::Test {
         warmupManager_ = std::make_shared<warmup::WarmupManagerS3Impl>(
             metaClient_, inodeManager_, dentryManager_, nullptr, nullptr,
             s3ClientAdaptor_, nullptr);
+
         client_ = std::make_shared<FuseS3Client>(
             mdsClient_, metaClient_, inodeManager_, dentryManager_,
             s3ClientAdaptor_, warmupManager_);
@@ -113,25 +116,36 @@ class TestFuseS3Client : public ::testing::Test {
 
         InitOptionBasic(&fuseClientOption_);
         InitFSInfo(client_);
-        fuseClientOption_.s3Opt.s3AdaptrOpt.asyncThreadNum = 1;
+        s3ClientAdaptor_->SetDiskCache(DiskCacheType::Disable);
         fuseClientOption_.dummyServerStartPort = 5000;
         fuseClientOption_.maxNameLength = 20u;
         fuseClientOption_.listDentryThreads = 2;
         fuseClientOption_.warmupThreadsNum = 10;
+        fuseClientOption_.s3Opt.s3AdaptrOpt.asyncThreadNum = 1;
+        fuseClientOption_.s3Opt.s3ClientAdaptorOpt.chunkFlushThreads = 5;
+        fuseClientOption_.s3Opt.s3ClientAdaptorOpt.prefetchExecQueueNum = 1;
+        fuseClientOption_.s3Opt.s3ClientAdaptorOpt.readCacheMaxByte = 104857600;
+        fuseClientOption_.s3Opt.s3ClientAdaptorOpt.writeCacheMaxByte = 10485760000;
+        fuseClientOption_.s3Opt.s3ClientAdaptorOpt.diskCacheOpt.diskCacheType = DiskCacheType::Disable;
         auto fsInfo = std::make_shared<FsInfo>();
         fsInfo->set_fsid(fsId);
         fsInfo->set_fsname("s3fs");
         client_->SetFsInfo(fsInfo);
         client_->Init(fuseClientOption_);
         PrepareFsInfo();
-    }
+	}
 
     virtual void TearDown() {
-        client_->UnInit();
+	    client_->UnInit();
+        LOG(ERROR) << "whs fuse op init failed.";
         mdsClient_ = nullptr;
+        LOG(ERROR) << "whs fuse op init failed.";
         metaClient_ = nullptr;
+        LOG(ERROR) << "whs fuse op init failed.";
+        // s3ClientAdaptor_->Stop();
         s3ClientAdaptor_ = nullptr;
-    }
+        LOG(ERROR) << "whs fuse op init failed.";
+	}
 
     void PrepareFsInfo() {
         auto fsInfo = std::make_shared<FsInfo>();
@@ -177,13 +191,25 @@ TEST_F(TestFuseS3Client, test_Init_with_KVCache) {
     curvefs::client::common::FLAGS_supportKVcache = true;
     curvefs::mds::topology::MemcacheClusterInfo memcacheCluster;
     memcacheCluster.set_clusterid(1);
+    std::shared_ptr<MockS3ClientAdaptor> s3ClientAdaptor =
+      std::make_shared<MockS3ClientAdaptor>();
     auto testclient = std::make_shared<FuseS3Client>(
         mdsClient_, metaClient_, inodeManager_, dentryManager_,
-        s3ClientAdaptor_, nullptr);
+        s3ClientAdaptor, nullptr);
     FuseClientOption opt;
     InitOptionBasic(&opt);
     InitFSInfo(testclient);
-    // testclient->SetMounted(true);
+    // if not set, then there will be a lot of threads in gdb
+    opt.s3Opt.s3ClientAdaptorOpt.chunkFlushThreads=1;
+    opt.s3Opt.s3ClientAdaptorOpt.diskCacheOpt.diskCacheType
+      = DiskCacheType::Disable;
+    opt.s3Opt.s3AdaptrOpt.asyncThreadNum = 1;
+    opt.s3Opt.s3ClientAdaptorOpt.readCacheMaxByte = 104857600;
+    opt.s3Opt.s3ClientAdaptorOpt.writeCacheMaxByte = 10485760000;
+    opt.kvClientManagerOpt.setThreadPooln = 1;
+    opt.kvClientManagerOpt.getThreadPooln = 1;
+    opt.listDentryThreads = 2;
+    opt.warmupThreadsNum = 10;
 
     // test init kvcache success
     {
@@ -839,6 +865,7 @@ TEST_F(TestFuseS3Client, warmUp_FetchChildDentry_suc_ListDentry) {
 }
 
 TEST_F(TestFuseS3Client, FuseOpInit_when_fs_exist) {
+
     MountOption mOpts;
     memset(&mOpts, 0, sizeof(mOpts));
     mOpts.fsName = "s3fs";
@@ -859,6 +886,7 @@ TEST_F(TestFuseS3Client, FuseOpInit_when_fs_exist) {
 
     ASSERT_EQ(fsInfo->fsid(), fsInfoExp.fsid());
     ASSERT_EQ(fsInfo->fsname(), fsInfoExp.fsname());
+
 }
 
 TEST_F(TestFuseS3Client, FuseOpDestroy) {
@@ -872,8 +900,9 @@ TEST_F(TestFuseS3Client, FuseOpDestroy) {
 
     EXPECT_CALL(*mdsClient_, UmountFs(fsName, _))
         .WillOnce(Return(FSStatusCode::OK));
-
+    VLOG(0) << "before FuseOpDestroy";
     client_->FuseOpDestroy(&mOpts);
+    VLOG(0) << "after FuseOpDestroy";
 }
 
 TEST_F(TestFuseS3Client, FuseOpWriteSmallSize) {
@@ -993,7 +1022,7 @@ TEST_F(TestFuseS3Client, FuseOpReadFailed) {
     ASSERT_EQ(CURVEFS_ERROR::INTERNAL, ret);
 }
 
-TEST_F(TestFuseS3Client, FuseOpFsync) {
+TEST_F(TestFuseS3Client, FuseOpFsync_0) {
     fuse_req_t req;
     fuse_ino_t ino = 1;
     struct fuse_file_info *fi;
@@ -1004,23 +1033,35 @@ TEST_F(TestFuseS3Client, FuseOpFsync) {
     inode.set_type(FsFileType::TYPE_S3);
 
     EXPECT_CALL(*s3ClientAdaptor_, Flush(_))
-        .WillOnce(Return(CURVEFS_ERROR::OK))
-        .WillOnce(Return(CURVEFS_ERROR::OK));
+        .WillOnce(Return(CURVEFS_ERROR::INTERNAL));
+    auto ret = client_->FuseOpFsync(req, ino, 1, fi);
+    ASSERT_EQ(CURVEFS_ERROR::INTERNAL, ret);
 
+    EXPECT_CALL(*s3ClientAdaptor_, Flush(_))
+        .WillOnce(Return(CURVEFS_ERROR::OK));
+    ret = client_->FuseOpFsync(req, ino, 1, fi);
+    ASSERT_EQ(CURVEFS_ERROR::OK, ret);
+
+    EXPECT_CALL(*s3ClientAdaptor_, Flush(_))
+        .WillOnce(Return(CURVEFS_ERROR::OK));
     auto inodeWrapper = std::make_shared<InodeWrapper>(inode, metaClient_);
     inodeWrapper->SetUid(32);
     EXPECT_CALL(*inodeManager_, GetInode(ino, _))
         .WillOnce(
+            DoAll(SetArgReferee<1>(inodeWrapper), Return(CURVEFS_ERROR::INTERNAL)));
+    ret = client_->FuseOpFsync(req, ino, 0, fi);
+    ASSERT_EQ(CURVEFS_ERROR::INTERNAL, ret);
+
+    EXPECT_CALL(*s3ClientAdaptor_, Flush(_))
+        .WillOnce(Return(CURVEFS_ERROR::OK));
+    inodeWrapper = std::make_shared<InodeWrapper>(inode, metaClient_);
+    inodeWrapper->SetUid(32);
+    EXPECT_CALL(*inodeManager_, GetInode(ino, _))
+        .WillOnce(
             DoAll(SetArgReferee<1>(inodeWrapper), Return(CURVEFS_ERROR::OK)));
-
-    EXPECT_CALL(*metaClient_, UpdateInodeAttrWithOutNlink(_, _, _, _, _))
-        .WillOnce(Return(MetaStatusCode::OK));
-
-    CURVEFS_ERROR ret = client_->FuseOpFsync(req, ino, 0, fi);
+    ret = client_->FuseOpFsync(req, ino, 0, fi);
     ASSERT_EQ(CURVEFS_ERROR::OK, ret);
 
-    ret = client_->FuseOpFsync(req, ino, 1, fi);
-    ASSERT_EQ(CURVEFS_ERROR::OK, ret);
 }
 
 TEST_F(TestFuseS3Client, FuseOpFlush) {
