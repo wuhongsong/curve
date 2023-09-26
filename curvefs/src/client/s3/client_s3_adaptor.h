@@ -145,6 +145,40 @@ class S3ClientAdaptorImpl : public S3ClientAdaptor {
     CURVEFS_ERROR FlushAllCache(uint64_t inodeId);
     CURVEFS_ERROR FsSync();
     int Stop();
+
+
+    uint64_t GetKvFromInflight() {
+        return kvFromInflight_.load();
+    }
+
+    uint64_t GetDiskFromInflight() {
+        return diskFromInflight_.load();
+    }
+
+    uint64_t GetS3FromInflight() {
+        return s3FromInflight_.load();
+    }
+
+    uint64_t GetFuseFromInflight() {
+        return fuseFromInflight_.load();
+    }
+
+    void SetKvFromInflight(uint64_t kvFromInflight) {
+        kvFromInflight_ .store(kvFromInflight);
+    }
+
+    void SetDiskFromInflight(uint64_t diskFromInflight) {
+        diskFromInflight_.store(diskFromInflight);
+    }
+
+    void SetS3FromInflight(uint64_t s3FromInflight) {
+        s3FromInflight_.store(s3FromInflight);
+    }
+
+    void SetFuseFromInflight(uint64_t fuseFromInflight) {
+        fuseFromInflight_.store(fuseFromInflight);
+    }
+
     uint64_t GetBlockSize() {
         return blockSize_;
     }
@@ -222,6 +256,7 @@ class S3ClientAdaptorImpl : public S3ClientAdaptor {
 
  private:
     void BackGroundFlush();
+    void BackGroundFlushWhs();
 
     using AsyncDownloadTask = std::function<void()>;
 
@@ -246,6 +281,11 @@ class S3ClientAdaptorImpl : public S3ClientAdaptor {
     void Enqueue(std::shared_ptr<FlushChunkCacheContext> context);
 
  private:
+    std::atomic<uint64_t> kvFromInflight_;
+    std::atomic<uint64_t> diskFromInflight_;
+    std::atomic<uint64_t> s3FromInflight_;
+    std::atomic<uint64_t> fuseFromInflight_;
+
     std::shared_ptr<S3Client> client_;
     uint64_t blockSize_;
     uint64_t chunkSize_;
@@ -260,6 +300,7 @@ class S3ClientAdaptorImpl : public S3ClientAdaptor {
     uint32_t readRetryIntervalMs_;
     uint32_t objectPrefix_;
     Thread bgFlushThread_;
+    Thread bgFlushThreadWhs_;
     std::atomic<bool> toStop_;
     std::mutex mtx_;
     std::mutex ioMtx_;

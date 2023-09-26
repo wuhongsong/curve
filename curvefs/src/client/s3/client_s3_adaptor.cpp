@@ -88,6 +88,7 @@ S3ClientAdaptorImpl::Init(
     if (startBackGround) {
         toStop_.store(false, std::memory_order_release);
         bgFlushThread_ = Thread(&S3ClientAdaptorImpl::BackGroundFlush, this);
+        bgFlushThreadWhs_ = Thread(&S3ClientAdaptorImpl::BackGroundFlushWhs, this);
     }
 
     LOG(INFO) << "S3ClientAdaptorImpl Init. block size:" << blockSize_
@@ -155,13 +156,16 @@ int S3ClientAdaptorImpl::Write(uint64_t inodeId, uint64_t offset,
 int S3ClientAdaptorImpl::Read(uint64_t inodeId, uint64_t offset,
                               uint64_t length, char *buf) {
     VLOG(6) << "read start offset:" << offset << ", len:" << length
-            << ", fsId:" << fsId_ << ", inodeId:" << inodeId;
+            << ", fsId:" << fsId_ << ", inodeId:" << inodeId << "," << GetFuseFromInflight();
+
+    SetFuseFromInflight(GetFuseFromInflight() + 1);
+
     uint64_t start = butil::cpuwide_time_us();
     FileCacheManagerPtr fileCacheManager =
         fsCacheManager_->FindOrCreateFileCacheManager(fsId_, inodeId);
 
     int ret = fileCacheManager->Read(inodeId, offset, length, buf);
-    VLOG(6) << "read end inodeId:" << inodeId << ",ret:" << ret;
+    VLOG(6) << "read end inodeId:" << inodeId << ",ret:" << ret << "," << GetFuseFromInflight();
     if (ret < 0) {
         return ret;
     }
@@ -304,6 +308,20 @@ void S3ClientAdaptorImpl::BackGroundFlush() {
     return;
 }
 
+
+void S3ClientAdaptorImpl::BackGroundFlushWhs() {
+    while (!toStop_.load(std::memory_order_acquire)) {
+
+        VLOG(0) << "whs background fssync end: "
+                    << diskFromInflight_.load()  << ", "
+                    << s3FromInflight_.load() << ", "
+                    << fuseFromInflight_.load() << ", "
+                    << kvFromInflight_.load();
+        sleep(1);
+    }
+    return;
+}
+
 int S3ClientAdaptorImpl::Stop() {
     LOG(INFO) << "start Stopping S3ClientAdaptor.";
     waitInterval_.StopWait();
@@ -311,6 +329,9 @@ int S3ClientAdaptorImpl::Stop() {
     FsSyncSignal();
     if (bgFlushThread_.joinable()) {
         bgFlushThread_.join();
+    }
+    if (bgFlushThreadWhs_.joinable()) {
+        bgFlushThreadWhs_.join();
     }
     if (HasDiskCache()) {
         for (auto &q : downloadTaskQueues_) {

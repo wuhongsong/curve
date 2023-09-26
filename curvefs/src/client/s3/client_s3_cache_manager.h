@@ -73,6 +73,21 @@ enum class CachePolicy {
     WRCache,
 };
 
+struct FetchObj {
+    uint64_t chunkIndex;
+    uint64_t chunkPos;
+    uint64_t blockIndex;
+    uint64_t blockPos;
+    uint64_t needReadLen;
+
+    std::string DebugString() const {
+        std::ostringstream os;
+        os << "FetchObj ( index = " << chunkIndex << ", chunkPos = " << chunkPos
+           << ", len = " << needReadLen << " )";
+        return os.str();
+    }
+};
+
 struct ReadRequest {
     uint64_t index;
     uint64_t chunkPos;
@@ -375,7 +390,10 @@ class FileCacheManager {
                            uint64_t fsId, uint64_t inodeId);
 
     void PrefetchS3Objs(
-        const std::vector<std::pair<std::string, uint64_t>> &prefetchObjs);
+        const std::vector<std::pair<std::string, FetchObj>> &prefetchObjs);
+
+     void PrefetchObjs(
+        const std::vector<std::pair<std::string, FetchObj>> &prefetchObjs);
 
     void HandleReadRequest(const ReadRequest &request,
                            const S3ChunkInfo &s3ChunkInfo,
@@ -465,6 +483,8 @@ class FileCacheManager {
     S3ClientAdaptorImpl *s3ClientAdaptor_;
     curve::common::Mutex downloadMtx_;
     std::set<std::string> downloadingObj_;
+    // curve::common::Mutex downloadKvMtx_;
+    std::set<std::string> downloadingKvObj_;
 
     std::shared_ptr<KVClientManager> kvClientManager_;
     std::shared_ptr<TaskThreadPool<>> readTaskPool_;
