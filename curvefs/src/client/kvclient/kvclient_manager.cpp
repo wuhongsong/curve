@@ -76,5 +76,30 @@ void KVClientManager::Get(std::shared_ptr<GetKVCacheTask> task) {
     });
 }
 
+void KVClientManager::Enqueue(
+  std::shared_ptr<GetKvCacheContext> context) {
+    auto task = [this, context]() {
+
+        this->GetKvCache(context);
+    };
+    threadPool_.Enqueue(task);
+}
+
+int KVClientManager::GetKvCache(
+  std::shared_ptr<GetKvCacheContext> context) {
+    VLOG(0) << "GetKvCacheContext start: " << context->key;
+    std::string error_log;
+    LatencyGuard guard(&kvClientMetric_.kvClientGet.latency);
+    context->res = client_->Get(context->key, context->value, context->offset,
+                                context->length, &error_log);
+
+        ONRETURN(Get, context->res);
+
+
+    context->cb(context);
+    VLOG(0) << "GetKvCacheContext end: " << context->key;
+    return 0;
+}
+
 }  // namespace client
 }  // namespace curvefs

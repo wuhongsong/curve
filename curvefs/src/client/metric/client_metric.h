@@ -237,6 +237,7 @@ struct S3Metric {
     InterfaceMetric adaptorWriteS3;
     InterfaceMetric adaptorWriteDiskCache;
     InterfaceMetric adaptorReadS3;
+    InterfaceMetric adaptorReadKv;
     InterfaceMetric adaptorReadDiskCache;
     bvar::Status<uint32_t> readSize;
     bvar::Status<uint32_t> writeSize;
@@ -250,6 +251,7 @@ struct S3Metric {
           adaptorWriteDiskCache(prefix, fsName + "_adaptor_write_disk_cache"),
           adaptorReadS3(prefix, fsName + "_adaptor_read_s3"),
           adaptorReadDiskCache(prefix, fsName + "_adaptor_read_disk_cache"),
+           adaptorReadKv(prefix, fsName + "_adaptor_read_kv"),
           readSize(prefix, fsName + "_adaptor_read_size", 0),
           writeSize(prefix, fsName + "_adaptor_write_size", 0) {}
 };

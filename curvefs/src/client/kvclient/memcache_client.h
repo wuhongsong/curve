@@ -126,6 +126,7 @@ class MemCachedClient : public KVClient {
 
     bool Get(const std::string &key, char *value, uint64_t offset,
              uint64_t length, std::string *errorlog) override {
+ LOG(ERROR) << "whs get object " << key << " read from kv";
         if (nullptr == tcli) {
             // multi thread use a memcached_st* client is unsafe.
             // should clone it or use memcached_st_pool.
