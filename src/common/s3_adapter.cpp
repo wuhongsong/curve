@@ -158,9 +158,10 @@ void S3Adapter::Init(const S3AdapterOption &option) {
     clientCfg_->endpointOverride = s3Address_;
     auto asyncThreadNum = option.asyncThreadNum;
     LOG(INFO) << "S3Adapter init thread num = " << asyncThreadNum << std::endl;
+    constexpr size_t awsThreadStackSize = 1ULL * 1024 * 1024; // TODO: config
     clientCfg_->executor =
         Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(
-            "S3Adapter.S3Client", asyncThreadNum);
+            "S3Adapter.S3Client", asyncThreadNum, awsThreadStackSize);
     s3Client_ = Aws::New<Aws::S3::S3Client>(AWS_ALLOCATE_TAG,
             Aws::Auth::AWSCredentials(s3Ak_, s3Sk_),
             *clientCfg_,

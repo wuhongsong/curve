@@ -1,0 +1,403 @@
+diff --git aws-cpp-sdk-core-tests/utils/threading/PooledThreadExecutor.cpp aws-cpp-sdk-core-tests/utils/threading/PooledThreadExecutor.cpp
+new file mode 100644
+index 00000000..7b86758f
+--- /dev/null
++++ aws-cpp-sdk-core-tests/utils/threading/PooledThreadExecutor.cpp
+@@ -0,0 +1,55 @@
++/*
++ *  Copyright (c) 2023 NetEase Inc.
++ *
++ *  Licensed under the Apache License, Version 2.0 (the "License");
++ *  you may not use this file except in compliance with the License.
++ *  You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ *  Unless required by applicable law or agreed to in writing, software
++ *  distributed under the License is distributed on an "AS IS" BASIS,
++ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ *  See the License for the specific language governing permissions and
++ *  limitations under the License.
++ */
++
++#include <aws/external/gtest.h>
++#include <aws/core/utils/threading/Executor.h>
++#include <aws/core/utils/threading/Semaphore.h>
++#include <atomic>
++#include <chrono>
++#include <unistd.h>
++
++using namespace Aws::Utils::Threading;
++
++TEST(PooledThreadExecutor, WaitAllTasksToBeDrained)
++{
++    std::atomic<int> i(1);
++    {
++        PooledThreadExecutor exec(10);
++        static Semaphore ev(0, 2);
++        auto first = [&] { ev.WaitOne(); i++; };
++        auto second = [&] { ev.WaitOne(); i++; };
++        exec.Submit(first);
++        exec.Submit(second);
++        ev.ReleaseAll();
++	// have to wait for a while because PoolThreadExecutor does not
++	// have a method to drain tasks. :(
++    	sleep(1);
++    }
++    i = i * 10;
++    ASSERT_EQ(30, i.load());
++}
++
++TEST(PooledThreadExecutor, WaitTaskToComplete)
++{
++    using namespace std::chrono;
++    std::atomic<int> i(1);
++    static Semaphore ev(0, 1);
++    PooledThreadExecutor exec(10);
++    exec.Submit([&] { i++; ev.Release(); });
++    ev.WaitOne();
++    i = i * 10;
++    ASSERT_EQ(20, i.load());
++}
+diff --git aws-cpp-sdk-core/include/aws/core/utils/threading/Executor.h aws-cpp-sdk-core/include/aws/core/utils/threading/Executor.h
+index 88048a30..c5f49881 100644
+--- aws-cpp-sdk-core/include/aws/core/utils/threading/Executor.h
++++ aws-cpp-sdk-core/include/aws/core/utils/threading/Executor.h
+@@ -20,6 +20,7 @@
+ #include <aws/core/utils/memory/stl/AWSVector.h>
+ #include <aws/core/utils/memory/stl/AWSMap.h>
+ #include <aws/core/utils/threading/Semaphore.h>
++#include <aws/core/utils/threading/StkSzThread.h>
+ #include <functional>
+ #include <future>
+ #include <mutex>
+@@ -66,7 +67,8 @@ namespace Aws
+             class AWS_CORE_API DefaultExecutor : public Executor
+             {
+             public:
+-                DefaultExecutor() : m_state(State::Free) {}
++                DefaultExecutor() : m_state(State::Free), m_stackSize(0) {}
++                explicit DefaultExecutor(size_t stackSize) : m_state(State::Free), m_stackSize(stackSize) {}
+                 ~DefaultExecutor();
+             protected:
+                 enum class State
+@@ -74,9 +76,10 @@ namespace Aws
+                     Free, Locked, Shutdown
+                 };
+                 bool SubmitToThread(std::function<void()>&&) override;
+-                void Detach(std::thread::id id);
++                void Detach(StkSzThread::id id);
+                 std::atomic<State> m_state;
+-                Aws::UnorderedMap<std::thread::id, std::thread> m_threads;
++                Aws::UnorderedMap<StkSzThread::id, StkSzThread> m_threads;
++                size_t m_stackSize;
+             };
+ 
+             enum class OverflowPolicy
+@@ -92,6 +95,7 @@ namespace Aws
+             {
+             public:
+                 PooledThreadExecutor(size_t poolSize, OverflowPolicy overflowPolicy = OverflowPolicy::QUEUE_TASKS_EVENLY_ACCROSS_THREADS);
++                PooledThreadExecutor(size_t poolSize, size_t stackSize, OverflowPolicy overflowPolicy = OverflowPolicy::QUEUE_TASKS_EVENLY_ACCROSS_THREADS);
+                 ~PooledThreadExecutor();
+ 
+                 /**
+@@ -113,6 +117,7 @@ namespace Aws
+                 Aws::Vector<ThreadTask*> m_threadTaskHandles;
+                 size_t m_poolSize;
+                 OverflowPolicy m_overflowPolicy;
++                size_t m_stackSize;
+ 
+                 /**
+                  * Once you call this, you are responsible for freeing the memory pointed to by task.
+diff --git aws-cpp-sdk-core/include/aws/core/utils/threading/StkSzThread.h aws-cpp-sdk-core/include/aws/core/utils/threading/StkSzThread.h
+new file mode 100644
+index 00000000..c73387f6
+--- /dev/null
++++ aws-cpp-sdk-core/include/aws/core/utils/threading/StkSzThread.h
+@@ -0,0 +1,80 @@
++/*
++ *  Copyright (c) 2023 NetEase Inc.
++ *
++ *  Licensed under the Apache License, Version 2.0 (the "License");
++ *  you may not use this file except in compliance with the License.
++ *  You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ *  Unless required by applicable law or agreed to in writing, software
++ *  distributed under the License is distributed on an "AS IS" BASIS,
++ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ *  See the License for the specific language governing permissions and
++ *  limitations under the License.
++ */
++
++#pragma once
++
++#include <functional>
++#include <pthread.h>
++
++namespace Aws
++{
++	namespace Utils
++	{
++		namespace Threading
++		{
++
++			// A thread class creates thread with specified stack size.
++			// Because std::thread does not allow programmer to specify
++			// thread's stack size, the class is a replacement.
++			// Internally we use pthread API to set thread's stack size.
++			// The name StkSz means 'Stack Size'.
++			class StkSzThread {
++			public:
++				using FuncObj = std::function<void ()>;
++				typedef pthread_t id;
++				const id INVALID_ID = 0;
++
++				StkSzThread() noexcept
++				{
++					td_ = INVALID_ID;
++				}
++
++				StkSzThread(StkSzThread&& other) noexcept
++				{
++					td_ = other.td_;
++					other.td_ = INVALID_ID;
++				}
++
++				explicit StkSzThread(FuncObj&& func, size_t stackSize);
++				StkSzThread(const StkSzThread&) = delete;
++				~StkSzThread();
++
++				bool joinable() const noexcept
++				{
++					return td_ != INVALID_ID;
++				}
++
++				void detach();
++				void join();
++				id get_id() const noexcept
++				{
++					return td_;
++				}
++
++			private:
++				static void *invoke(void *p);
++				pthread_t td_;
++			};
++
++			namespace stksz_thread {
++				inline StkSzThread::id get_id()
++				{
++					return pthread_self();
++				}
++			}
++		}
++	}
++}
+diff --git aws-cpp-sdk-core/include/aws/core/utils/threading/ThreadTask.h aws-cpp-sdk-core/include/aws/core/utils/threading/ThreadTask.h
+index b045069c..f54cc74b 100644
+--- aws-cpp-sdk-core/include/aws/core/utils/threading/ThreadTask.h
++++ aws-cpp-sdk-core/include/aws/core/utils/threading/ThreadTask.h
+@@ -16,6 +16,7 @@
+ #pragma once
+ 
+ #include <aws/core/Core_EXPORTS.h>
++#include <aws/core/utils/threading/StkSzThread.h>
+ #include <functional>
+ #include <thread>
+ #include <atomic>
+@@ -51,7 +52,7 @@ namespace Aws
+             private:                
+                 std::atomic<bool> m_continue;
+                 PooledThreadExecutor& m_executor;
+-                std::thread m_thread;
++                StkSzThread m_thread;
+             };
+         }
+     }
+diff --git aws-cpp-sdk-core/source/utils/threading/Executor.cpp aws-cpp-sdk-core/source/utils/threading/Executor.cpp
+index 173e07eb..43627ec0 100644
+--- aws-cpp-sdk-core/source/utils/threading/Executor.cpp
++++ aws-cpp-sdk-core/source/utils/threading/Executor.cpp
+@@ -26,7 +26,7 @@ bool DefaultExecutor::SubmitToThread(std::function<void()>&&  fx)
+ {
+     auto main = [fx, this] { 
+         fx(); 
+-        Detach(std::this_thread::get_id()); 
++        Detach(stksz_thread::get_id()); 
+     };
+ 
+     State expected;
+@@ -35,7 +35,7 @@ bool DefaultExecutor::SubmitToThread(std::function<void()>&&  fx)
+         expected = State::Free;
+         if(m_state.compare_exchange_strong(expected, State::Locked))
+         {
+-            std::thread t(main);
++            StkSzThread t(main, m_stackSize);
+             const auto id = t.get_id(); // copy the id before we std::move the thread
+             m_threads.emplace(id, std::move(t));
+             m_state = State::Free;
+@@ -46,7 +46,7 @@ bool DefaultExecutor::SubmitToThread(std::function<void()>&&  fx)
+     return false;
+ }
+ 
+-void DefaultExecutor::Detach(std::thread::id id)
++void DefaultExecutor::Detach(StkSzThread::id id)
+ {
+     State expected;
+     do
+@@ -84,7 +84,7 @@ DefaultExecutor::~DefaultExecutor()
+ }
+ 
+ PooledThreadExecutor::PooledThreadExecutor(size_t poolSize, OverflowPolicy overflowPolicy) :
+-    m_sync(0, poolSize), m_poolSize(poolSize), m_overflowPolicy(overflowPolicy)
++    m_sync(0, poolSize), m_poolSize(poolSize), m_overflowPolicy(overflowPolicy), m_stackSize(0)
+ {
+     for (size_t index = 0; index < m_poolSize; ++index)
+     {
+@@ -92,6 +92,16 @@ PooledThreadExecutor::PooledThreadExecutor(size_t poolSize, OverflowPolicy overf
+     }
+ }
+ 
++PooledThreadExecutor::PooledThreadExecutor(size_t poolSize, size_t stackSize, OverflowPolicy overflowPolicy) :
++    m_sync(0, poolSize), m_poolSize(poolSize), m_overflowPolicy(overflowPolicy), m_stackSize(stackSize)
++{
++    for (size_t index = 0; index < m_poolSize; ++index)
++    {
++        m_threadTaskHandles.push_back(Aws::New<ThreadTask>(POOLED_CLASS_TAG, *this));
++    }
++}
++
++
+ PooledThreadExecutor::~PooledThreadExecutor()
+ {
+     for(auto threadTask : m_threadTaskHandles)
+diff --git aws-cpp-sdk-core/source/utils/threading/StkSzThread.cpp aws-cpp-sdk-core/source/utils/threading/StkSzThread.cpp
+new file mode 100644
+index 00000000..92f20dc5
+--- /dev/null
++++ aws-cpp-sdk-core/source/utils/threading/StkSzThread.cpp
+@@ -0,0 +1,107 @@
++/*
++ *  Copyright (c) 2023 NetEase Inc.
++ *
++ *  Licensed under the Apache License, Version 2.0 (the "License");
++ *  you may not use this file except in compliance with the License.
++ *  You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ *  Unless required by applicable law or agreed to in writing, software
++ *  distributed under the License is distributed on an "AS IS" BASIS,
++ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ *  See the License for the specific language governing permissions and
++ *  limitations under the License.
++ */
++
++#include <aws/core/utils/threading/StkSzThread.h>
++#include <memory>
++#include <errno.h>
++#include <exception>
++#include <stdio.h>
++#include <pthread.h>
++
++namespace {
++	// Mimic std::thread throwing exceptions.
++	// However Aws lib disabled C++ exception, so instead of throwing
++	// exceptions, we print error messages and abort.
++	static void throw_system_error(int rc, const char *msg)
++	{
++		errno = rc;
++		perror(msg);
++		std::terminate();
++	}
++
++	static void throw_invalid_argument(const char *msg)
++	{
++		errno = EINVAL;
++		perror(msg);
++		std::terminate();
++	}
++}
++
++namespace Aws
++{
++	namespace Utils
++	{
++		namespace Threading
++		{
++			StkSzThread::StkSzThread(FuncObj&& func, size_t stackSize)
++			{
++				std::unique_ptr<FuncObj> fp(new FuncObj(std::move(func)));
++				pthread_attr_t attr;
++				int rc;
++
++				rc = pthread_attr_init(&attr);
++				if (rc)
++					throw_system_error(rc, "pthread_attr_init");
++				if (stackSize && (rc = pthread_attr_setstacksize(&attr, stackSize)))
++					throw_system_error(rc, "pthread_attr_setstacksize");
++				rc = pthread_create(&td_, &attr, invoke, fp.get());
++				pthread_attr_destroy(&attr);
++				if (rc) {
++					throw_system_error(rc, "pthread_create");
++				} else {
++					fp.release();
++				}
++			}
++
++			StkSzThread::~StkSzThread()
++			{                                                                           
++				if (joinable())
++					std::terminate();
++			}
++
++			void StkSzThread::detach()
++			{
++				if (joinable()) {
++					int rc = pthread_detach(td_);
++					if (rc)
++						throw_system_error(rc, "pthread_detach");
++					td_ = INVALID_ID;
++				} else {
++					throw_invalid_argument("detach nil thread");
++				}
++			}
++
++			void StkSzThread::join()
++			{
++				if (joinable()) {
++					int rc = pthread_join(td_, nullptr);
++					if (rc)
++						throw_system_error(rc, "pthread_join");
++					td_ = INVALID_ID;
++				} else {
++					throw_invalid_argument("join nil thread");
++				}
++			}
++
++			void *StkSzThread::invoke(void *p)
++			{
++				std::unique_ptr<FuncObj> fp(static_cast<FuncObj *>(p));
++				(*fp)();
++				return nullptr;
++			}
++		}
++	}
++}
+diff --git aws-cpp-sdk-core/source/utils/threading/ThreadTask.cpp aws-cpp-sdk-core/source/utils/threading/ThreadTask.cpp
+index debe24b7..64f5a4a1 100644
+--- aws-cpp-sdk-core/source/utils/threading/ThreadTask.cpp
++++ aws-cpp-sdk-core/source/utils/threading/ThreadTask.cpp
+@@ -19,7 +19,8 @@
+ using namespace Aws::Utils;
+ using namespace Aws::Utils::Threading;
+ 
+-ThreadTask::ThreadTask(PooledThreadExecutor& executor) : m_continue(true), m_executor(executor), m_thread(std::bind(&ThreadTask::MainTaskRunner, this))
++ThreadTask::ThreadTask(PooledThreadExecutor& executor) : m_continue(true), m_executor(executor), m_thread(std::bind(&ThreadTask::MainTaskRunner, this),
++	executor.m_stackSize)
+ {
+ }
+ 
